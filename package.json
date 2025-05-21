@@ -1,0 +1,13 @@
+{
+  "name": "electron-audio-recorder",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "electron": "^25.0.0",
+    "ws": "^8.18.2"
+  }
+}
