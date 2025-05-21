@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Audio Recorder</title>
+    <title>Voice Command Runner</title>
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <style>
@@ -13,212 +13,480 @@
         box-sizing: border-box;
       }
 
-      body {
-        font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-        background: #f5f5f7;
-        color: #1d1d1f;
-        line-height: 1.5;
-        padding: 2rem;
-        max-width: 1200px;
-        margin: 0 auto;
+      :root {
+        --primary: #0a84ff;
+        --primary-dark: #0071e3;
+        --success: #30d158;
+        --warning: #ffd60a;
+        --error: #ff453a;
+        --background: #000000;
+        --surface: #1c1c1e;
+        --surface-2: #2c2c2e;
+        --surface-3: #3c3c3e;
+        --text: #ffffff;
+        --text-secondary: #86868b;
+        --border-radius: 16px;
+        --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
 
-      .container {
-        background: white;
+      body {
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+        background: var(--background);
+        color: var(--text);
+        line-height: 1.5;
+        min-height: 100vh;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      .app-container {
+        display: grid;
+        grid-template-columns: 450px 1fr;
+        height: 100vh;
+        overflow: hidden;
+        background: var(--background);
+      }
+
+      .sidebar {
+        background: var(--surface);
         padding: 2rem;
-        border-radius: 16px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
-          0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        border-right: 1px solid var(--surface-2);
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .sidebar::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 200px;
+        background: linear-gradient(
+          180deg,
+          rgba(10, 132, 255, 0.1) 0%,
+          transparent 100%
+        );
+        pointer-events: none;
+      }
+
+      .main-content {
+        padding: 2rem;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        position: relative;
       }
 
       h1 {
-        font-size: 2rem;
+        font-size: 2.5rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--primary), #60a5fa);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 1rem;
+        position: relative;
+        z-index: 1;
+      }
+
+      .mic-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 400px;
+        position: relative;
+        margin: 2rem 0;
+      }
+
+      .mic-visualization {
+        width: 220px;
+        height: 220px;
+        border-radius: 50%;
+        background: var(--primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        cursor: pointer;
+        transition: var(--transition);
+        box-shadow: 0 0 40px rgba(10, 132, 255, 0.2);
+      }
+
+      .mic-visualization:hover {
+        transform: scale(1.02);
+        box-shadow: 0 0 60px rgba(10, 132, 255, 0.3);
+      }
+
+      .mic-visualization.recording {
+        animation: pulse 2s infinite;
+        background: var(--success);
+      }
+
+      .mic-icon {
+        width: 100px;
+        height: 100px;
+        fill: white;
+        transition: var(--transition);
+      }
+
+      .mic-visualization:hover .mic-icon {
+        transform: scale(1.1);
+      }
+
+      @keyframes pulse {
+        0% {
+          transform: scale(1);
+          box-shadow: 0 0 0 0 rgba(48, 209, 88, 0.4);
+        }
+        70% {
+          transform: scale(1.05);
+          box-shadow: 0 0 0 30px rgba(48, 209, 88, 0);
+        }
+        100% {
+          transform: scale(1);
+          box-shadow: 0 0 0 0 rgba(48, 209, 88, 0);
+        }
+      }
+
+      .recording-status {
+        margin-top: 2rem;
+        font-size: 1.2rem;
         font-weight: 600;
-        margin-bottom: 1.5rem;
-        color: #1d1d1f;
+        color: var(--success);
+        opacity: 0;
+        transition: var(--transition);
+        text-align: center;
+      }
+
+      .recording-status.active {
+        opacity: 1;
+      }
+
+      .audio-waves {
+        position: absolute;
+        bottom: -40px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        height: 40px;
+      }
+
+      .wave-bar {
+        width: 3px;
+        background: var(--primary);
+        border-radius: 3px;
+        transition: height 0.2s ease;
       }
 
       .controls {
         display: flex;
         gap: 1rem;
-        margin-bottom: 2rem;
-        align-items: center;
+        margin: 1rem 0;
       }
 
-      button {
-        padding: 0.75rem 1.5rem;
-        border-radius: 8px;
+      .btn {
+        padding: 1rem 2rem;
+        border-radius: var(--border-radius);
         border: none;
-        font-size: 1rem;
-        font-weight: 500;
+        font-size: 1.1rem;
+        font-weight: 600;
         cursor: pointer;
-        transition: all 0.2s ease;
+        transition: var(--transition);
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-      }
-
-      #startBtn {
-        background: #007aff;
-        color: white;
-      }
-
-      #startBtn:hover {
-        background: #0066cc;
-      }
-
-      #stopBtn {
-        background: #ff3b30;
-        color: white;
-      }
-
-      #stopBtn:hover {
-        background: #d70015;
-      }
-
-      button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-
-      .recording-indicator {
-        display: none;
-        color: #ff3b30;
-        font-weight: 500;
-        animation: blink 1s infinite;
-        padding: 0.5rem 1rem;
-        background: rgba(255, 59, 48, 0.1);
-        border-radius: 6px;
-      }
-
-      @keyframes blink {
-        50% {
-          opacity: 0.5;
-        }
-      }
-
-      #visualizer {
+        gap: 0.75rem;
+        color: var(--text);
         width: 100%;
-        height: 120px;
-        background: #f5f5f7;
-        border-radius: 12px;
-        margin: 1.5rem 0;
-        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
+        justify-content: center;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
       }
 
-      .status {
-        background: #f5f5f7;
-        padding: 1.5rem;
-        border-radius: 12px;
-        margin: 1.5rem 0;
+      .btn:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+        background: var(--surface-2) !important;
+        color: var(--text-secondary);
       }
 
-      .status div {
-        margin-bottom: 0.5rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
+      .btn.primary {
+        background: var(--primary);
+        color: white;
       }
 
-      .status div:last-child {
-        margin-bottom: 0;
+      .btn.primary:hover:not(:disabled) {
+        background: var(--primary-dark);
+        transform: translateY(-2px);
       }
 
-      .status-label {
-        font-weight: 500;
-        color: #6e6e73;
+      .btn.success {
+        background: var(--success);
+        color: white;
+      }
+
+      .btn.success:hover:not(:disabled) {
+        background: #27b84b;
+        transform: translateY(-2px);
       }
 
       .transcription {
-        background: #ffffff;
-        padding: 1.5rem;
-        border-radius: 12px;
-        margin: 1.5rem 0;
-        border: 1px solid #e5e5e7;
-        max-height: 400px;
-        overflow-y: auto;
+        background: var(--surface);
+        padding: 2rem;
+        border-radius: var(--border-radius);
+        border: 1px solid var(--surface-2);
+        transition: var(--transition);
+      }
+
+      .transcription:hover {
+        border-color: var(--surface-3);
+        transform: translateY(-2px);
       }
 
       .transcription h3 {
-        color: #1d1d1f;
-        font-size: 1.25rem;
-        margin-bottom: 1rem;
+        font-size: 1.2rem;
         font-weight: 600;
-        position: sticky;
-        top: 0;
-        background: #ffffff;
-        padding: 0.5rem 0;
-        border-bottom: 1px solid #e5e5e7;
-      }
-
-      .transcription-history {
         margin-bottom: 1rem;
-      }
-
-      .transcript-entry {
-        color: #424245;
-        line-height: 1.6;
-        font-size: 1.1rem;
-        margin-bottom: 0.5rem;
-        padding: 0.5rem;
-        background: #f5f5f7;
-        border-radius: 6px;
+        color: var(--text-secondary);
       }
 
       .current-transcription {
-        color: #007aff;
-        line-height: 1.6;
-        font-size: 1.1rem;
-        padding: 0.5rem;
-        background: rgba(0, 122, 255, 0.1);
-        border-radius: 6px;
-        border-left: 3px solid #007aff;
+        color: var(--text);
+        font-size: 1.5rem;
+        line-height: 1.4;
+        padding: 1.5rem;
+        background: rgba(10, 132, 255, 0.1);
+        border-radius: var(--border-radius);
+        border-left: 3px solid var(--primary);
+        margin: 1rem 0;
+        min-height: 100px;
+        transition: var(--transition);
       }
 
-      /* Icons */
-      .icon {
-        width: 20px;
-        height: 20px;
-        fill: currentColor;
+      .text-input {
+        width: 100%;
+        background: rgba(10, 132, 255, 0.1);
+        border: 1px solid var(--surface-2);
+        border-radius: var(--border-radius);
+        color: var(--text);
+        font-size: 1.1rem;
+        padding: 1rem;
+        resize: vertical;
+        min-height: 60px;
+        font-family: inherit;
+        margin: 1rem 0;
+        transition: var(--transition);
+      }
+
+      .text-input:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.2);
+      }
+
+      .execution-log {
+        background: var(--surface);
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        font-family: "SF Mono", "Monaco", "Menlo", monospace;
+        font-size: 0.9rem;
+        max-height: 500px;
+        min-height: 400px;
+        overflow-y: auto;
+        border: 1px solid var(--surface-2);
+        transition: var(--transition);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        flex: 1;
+        margin-top: 1rem;
+      }
+
+      .execution-log:hover {
+        border-color: var(--surface-3);
+      }
+
+      .log-entry {
+        margin-bottom: 0.5rem;
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.05);
+        color: #98ff98;
+        transition: var(--transition);
+        font-size: 0.95rem;
+        line-height: 1.5;
+        word-break: break-word;
+      }
+
+      .log-entry:hover {
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .error {
+        color: var(--error);
+        background: rgba(255, 69, 58, 0.1);
+      }
+
+      .warning {
+        color: var(--warning);
+        background: rgba(255, 214, 10, 0.1);
+      }
+
+      .success {
+        color: var(--success);
+        background: rgba(48, 209, 88, 0.1);
+      }
+
+      /* Scrollbar styling */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: var(--surface);
+        border-radius: 4px;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: var(--surface-2);
+        border-radius: 4px;
+        transition: var(--transition);
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--surface-3);
+      }
+
+      /* Glass morphism effect */
+      .glass {
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+
+      /* Responsive design */
+      @media (max-width: 1200px) {
+        .app-container {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto 1fr;
+        }
+
+        .sidebar {
+          padding: 1.5rem;
+        }
+
+        .mic-container {
+          min-height: 300px;
+        }
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <h1>Audio Recorder</h1>
+    <div class="app-container">
+      <div class="sidebar glass">
+        <h1>Voice Command Runner</h1>
 
-      <div class="controls">
-        <button id="startBtn">
-          <svg class="icon" viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="10" fill="currentColor" />
-          </svg>
-          Start Recording
-        </button>
-        <button id="stopBtn" disabled>
-          <svg class="icon" viewBox="0 0 24 24">
-            <rect x="6" y="6" width="12" height="12" fill="currentColor" />
-          </svg>
-          Stop Recording
-        </button>
-        <span class="recording-indicator" id="recordingIndicator"
-          >● Recording</span
-        >
+        <div class="mic-container">
+          <div class="mic-visualization" id="micVisualization">
+            <svg class="mic-icon" viewBox="0 0 24 24">
+              <path
+                d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"
+              />
+              <path
+                d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"
+              />
+            </svg>
+            <div class="audio-waves" id="audioWaves">
+              <!-- Audio wave bars will be added dynamically -->
+            </div>
+          </div>
+          <div class="recording-status" id="recordingStatus">Recording...</div>
+        </div>
+
+        <div class="controls">
+          <button id="startBtn" class="btn primary">Start Recording</button>
+          <button id="processBtn" class="btn success" disabled>
+            Process Command
+          </button>
+        </div>
       </div>
 
-      <canvas id="visualizer"></canvas>
-
-      <div class="status">
-        <div>
-          <span class="status-label">Status:</span>
-          <span id="statusText">Ready</span>
+      <div class="main-content">
+        <div class="transcription">
+          <h3>Live Transcription</h3>
+          <div id="currentTranscription" class="current-transcription">
+            Waiting for speech...
+          </div>
+          <textarea
+            id="textInput"
+            class="text-input"
+            placeholder="Type your command here and press Enter..."
+            rows="3"
+          ></textarea>
         </div>
-        <div>
-          <span class="status-label">Save Location:</span>
-          <span id="savePath">Not yet saved</span>
+
+        <div id="executionLog" class="execution-log">
+          <div class="log-entry">System ready...</div>
         </div>
       </div>
     </div>
 
+    <script>
+      // Add audio wave animation
+      const audioWaves = document.getElementById("audioWaves");
+      const numBars = 30; // Increased number of bars for better visualization
+
+      for (let i = 0; i < numBars; i++) {
+        const bar = document.createElement("div");
+        bar.className = "wave-bar";
+        bar.style.height = "2px";
+        audioWaves.appendChild(bar);
+      }
+
+      function updateWaveAnimation(isRecording) {
+        if (!isRecording) {
+          audioWaves.querySelectorAll(".wave-bar").forEach((bar) => {
+            bar.style.height = "2px";
+          });
+          return;
+        }
+
+        audioWaves.querySelectorAll(".wave-bar").forEach((bar) => {
+          const height = Math.random() * 30 + 5;
+          bar.style.height = `${height}px`;
+        });
+      }
+
+      // Update recording visualization
+      const micVisualization = document.getElementById("micVisualization");
+      const recordingStatus = document.getElementById("recordingStatus");
+      let isRecording = false;
+      let waveAnimationInterval;
+
+      micVisualization.addEventListener("click", () => {
+        document.getElementById("startBtn").click();
+      });
+
+      document.getElementById("startBtn").addEventListener("click", () => {
+        isRecording = !isRecording;
+        micVisualization.classList.toggle("recording", isRecording);
+        recordingStatus.classList.toggle("active", isRecording);
+
+        if (isRecording) {
+          waveAnimationInterval = setInterval(
+            () => updateWaveAnimation(true),
+            100
+          );
+        } else {
+          clearInterval(waveAnimationInterval);
+          updateWaveAnimation(false);
+        }
+      });
+    </script>
     <script src="renderer.js"></script>
   </body>
 </html>

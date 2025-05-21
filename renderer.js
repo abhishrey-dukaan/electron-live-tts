@@ -1,335 +1,411 @@
+// Example renderer.js implementation for the refactored system
 const { ipcRenderer } = require("electron");
 
-let mediaRecorder;
-let audioChunks = [];
-let audioContext;
-let analyser;
-let animationId;
-let visualizerInitialized = false;
-let isRecording = false;
-let transcriptHistory = [];
+// Wait for DOM to be fully loaded
+document.addEventListener("DOMContentLoaded", () => {
+  // DOM elements
+  const transcriptEl = document.getElementById("currentTranscription");
+  const startBtn = document.getElementById("startBtn");
+  const processBtn = document.getElementById("processBtn");
+  const textInput = document.getElementById("textInput");
+  const executionLog = document.getElementById("executionLog");
+  const micVisualization = document.getElementById("micVisualization");
+  const recordingStatus = document.getElementById("recordingStatus");
 
-const startBtn = document.getElementById("startBtn");
-const stopBtn = document.getElementById("stopBtn");
-const recordingIndicator = document.getElementById("recordingIndicator");
-const statusText = document.getElementById("statusText");
-const savePath = document.getElementById("savePath");
-const canvas = document.getElementById("visualizer");
-const canvasCtx = canvas.getContext("2d");
+  let isRecording = false;
+  let finalTranscript = "";
+  let audioContext = null;
+  let audioStream = null;
+  let silenceTimer = null;
+  let lastAudioTime = Date.now();
+  let silenceStart = null;
+  const SILENCE_THRESHOLD = 0.01;
+  const SILENCE_DURATION = 2000;
+  let lastLogTime = 0;
+  let audioProcessor = null;
 
-// Listen for environment variables from main process
-ipcRenderer.on("init-env", (event, env) => {
-  // DEEPGRAM_API_KEY is no longer needed as it's handled through the main process
-});
+  // Initialize audio context
+  async function initializeAudio() {
+    try {
+      addLogEntry("Initializing audio...");
 
-// Initialize canvas
-function setupCanvas() {
-  canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-  canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-  canvasCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
-  canvas.style.width = canvas.offsetWidth + "px";
-  canvas.style.height = canvas.offsetHeight + "px";
-}
+      // Request microphone permission with specific constraints
+      audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      });
 
-// Handle window resize
-window.addEventListener("resize", setupCanvas);
-setupCanvas();
+      addLogEntry("Microphone access granted");
 
-// Draw initial empty visualizer
-function drawEmptyVisualizer() {
-  const gradient = canvasCtx.createLinearGradient(0, 0, canvas.width, 0);
-  gradient.addColorStop(0, "#f5f5f7");
-  gradient.addColorStop(1, "#f5f5f7");
+      // Create audio context with specific sample rate
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: 16000,
+      });
 
-  canvasCtx.fillStyle = gradient;
-  canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+      // Create media stream source
+      const source = audioContext.createMediaStreamSource(audioStream);
 
-  // Draw a subtle line in the middle
-  canvasCtx.beginPath();
-  canvasCtx.strokeStyle = "#e5e5e7";
-  canvasCtx.lineWidth = 2;
-  canvasCtx.moveTo(0, canvas.height / 2);
-  canvasCtx.lineTo(canvas.width, canvas.height / 2);
-  canvasCtx.stroke();
-}
+      // Create script processor for raw audio data
+      audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
 
-// Initialize empty visualizer
-drawEmptyVisualizer();
+      // Connect nodes
+      source.connect(audioProcessor);
+      audioProcessor.connect(audioContext.destination);
 
-// Visualizer function with smooth animations
-function drawVisualizer(dataArray) {
-  const bufferLength = dataArray.length;
-  const barWidth = (canvas.width / bufferLength) * 2.5;
+      // Handle audio processing
+      audioProcessor.onaudioprocess = handleAudioProcess;
 
-  // Create gradient
-  const gradient = canvasCtx.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, "#007AFF");
-  gradient.addColorStop(1, "#5856D6");
-
-  canvasCtx.fillStyle = "#f5f5f7";
-  canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-
-  let x = 0;
-
-  for (let i = 0; i < bufferLength; i++) {
-    const barHeight = (dataArray[i] / 255) * canvas.height * 0.8;
-
-    // Add some randomness for more dynamic visualization
-    const heightVariation = Math.random() * 5;
-
-    canvasCtx.fillStyle = gradient;
-
-    // Draw mirrored bars
-    const y = (canvas.height - barHeight) / 2;
-    canvasCtx.fillRect(x, y, barWidth - 2, barHeight + heightVariation);
-
-    x += barWidth;
-  }
-}
-
-function visualize(stream) {
-  if (!audioContext) {
-    audioContext = new AudioContext();
-  }
-
-  const source = audioContext.createMediaStreamSource(stream);
-  analyser = audioContext.createAnalyser();
-  analyser.fftSize = 256;
-  source.connect(analyser);
-
-  const bufferLength = analyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-
-  function animate() {
-    animationId = requestAnimationFrame(animate);
-    analyser.getByteFrequencyData(dataArray);
-    drawVisualizer(dataArray);
-  }
-
-  animate();
-}
-
-// Handle Deepgram messages
-ipcRenderer.on("deepgram-ready", () => {
-  statusText.textContent = "Connected to Deepgram";
-});
-
-ipcRenderer.on("deepgram-transcript", (_, data) => {
-  if (
-    data.channel &&
-    data.channel.alternatives &&
-    data.channel.alternatives[0]
-  ) {
-    const transcript = data.channel.alternatives[0].transcript;
-    if (transcript && transcript.trim()) {
-      // If it's a final transcript, add it to history
-      if (data.is_final) {
-        transcriptHistory.push(transcript);
-      }
-      updateLiveTranscription(transcript, data.is_final);
+      addLogEntry("Audio system initialized successfully");
+      return true;
+    } catch (error) {
+      console.error("Error initializing audio:", error);
+      addLogEntry(`Error initializing audio: ${error.message}`, "error");
+      return false;
     }
   }
-});
 
-ipcRenderer.on("deepgram-closed", (_, data) => {
-  statusText.textContent = `Disconnected from Deepgram: ${
-    data.reason || "Connection closed"
-  }`;
-});
+  // Handle audio processing
+  function handleAudioProcess(e) {
+    if (!isRecording) return;
 
-ipcRenderer.on("deepgram-error", (_, error) => {
-  statusText.textContent = `Error: ${error}`;
-  console.error("Deepgram error:", error);
-});
+    const inputData = e.inputBuffer.getChannelData(0);
+    const audioLevel = Math.max(...inputData.map(Math.abs));
+    const now = Date.now();
 
-startBtn.addEventListener("click", async () => {
-  try {
-    // Clear transcript history when starting new recording
-    transcriptHistory = [];
-    updateLiveTranscription("", true);
+    // Log audio levels periodically
+    if (now - lastLogTime > 1000) {
+      console.log("Current audio level:", audioLevel);
+      addLogEntry(`Audio level: ${audioLevel.toFixed(4)}`);
+      lastLogTime = now;
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        sampleRate: 48000,
-      },
+      // Update wave animation based on actual audio level
+      updateWaveAnimation(true, audioLevel);
+    }
+
+    // Silence detection
+    if (audioLevel > SILENCE_THRESHOLD) {
+      if (silenceStart !== null) {
+        addLogEntry("Audio detected, resetting silence timer");
+        silenceStart = null;
+      }
+      lastAudioTime = now;
+    } else if (silenceStart === null) {
+      silenceStart = now;
+      addLogEntry("Silence started");
+    } else {
+      const silenceDuration = now - silenceStart;
+      if (silenceDuration >= SILENCE_DURATION && finalTranscript.trim()) {
+        addLogEntry("Silence threshold reached, processing command");
+        silenceStart = null;
+        handleSilence();
+      }
+    }
+
+    // Convert and send audio data
+    try {
+      const int16Data = new Int16Array(inputData.length);
+      for (let i = 0; i < inputData.length; i++) {
+        int16Data[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+      }
+      ipcRenderer.send("audio-data", int16Data.buffer);
+    } catch (error) {
+      console.error("Error processing audio data:", error);
+      addLogEntry(`Error processing audio: ${error.message}`, "error");
+    }
+  }
+
+  // Update wave animation with actual audio level
+  function updateWaveAnimation(isRecording, audioLevel = 0) {
+    const audioWaves = document.getElementById("audioWaves");
+    if (!audioWaves) return;
+
+    if (!isRecording) {
+      audioWaves.querySelectorAll(".wave-bar").forEach((bar) => {
+        bar.style.height = "2px";
+      });
+      return;
+    }
+
+    // Scale the audio level to a reasonable range for visualization
+    const maxHeight = 30;
+    const scaledLevel = Math.min(audioLevel * 200, 1) * maxHeight;
+
+    audioWaves.querySelectorAll(".wave-bar").forEach((bar) => {
+      // Add some randomness but keep it proportional to the actual audio level
+      const randomFactor = 0.7 + Math.random() * 0.6;
+      const height = Math.max(2, scaledLevel * randomFactor);
+      bar.style.height = `${height}px`;
     });
+  }
 
-    mediaRecorder = new MediaRecorder(stream);
-    isRecording = true;
+  // Handle silence detection
+  async function handleSilence() {
+    try {
+      if (!isRecording || !finalTranscript.trim()) return;
 
-    // Set up audio processing for Deepgram
-    audioContext = new AudioContext({ sampleRate: 48000 });
-    const source = audioContext.createMediaStreamSource(stream);
-    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      console.log("Processing command after silence");
+      addLogEntry("Detected silence, processing command...");
 
-    source.connect(processor);
-    processor.connect(audioContext.destination);
+      // Stop recording but keep the audio context alive
+      await ipcRenderer.invoke("stop-deepgram");
+      isRecording = false;
+      startBtn.textContent = "Start Recording";
 
-    // Start Deepgram connection
-    await ipcRenderer.invoke("start-deepgram");
+      // Execute the command
+      console.log("Executing command:", finalTranscript);
+      addLogEntry(`Executing command: ${finalTranscript}`);
+      await executeCommand(finalTranscript);
 
-    processor.onaudioprocess = (e) => {
-      if (isRecording) {
-        // Convert audio to 16-bit PCM
-        const inputData = e.inputBuffer.getChannelData(0);
-        const pcmData = new Int16Array(inputData.length);
-        for (let i = 0; i < inputData.length; i++) {
-          const s = Math.max(-1, Math.min(1, inputData[i]));
-          pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      // Clear the transcript and reset
+      finalTranscript = "";
+      transcriptEl.textContent = "Waiting for speech...";
+
+      // Automatically start listening again
+      console.log("Restarting recording");
+      addLogEntry("Restarting recording");
+      const success = await ipcRenderer.invoke("start-deepgram");
+      if (success) {
+        isRecording = true;
+        startBtn.textContent = "Stop Recording";
+        silenceStart = null; // Reset silence detection
+      }
+    } catch (error) {
+      console.error("Error handling silence:", error);
+      addLogEntry(`Error: ${error.message}`, "error");
+      stopRecording();
+    }
+  }
+
+  // Set up environment variables
+  ipcRenderer.on("init-env", (event, env) => {
+    if (!env.DEEPGRAM_API_KEY) {
+      addLogEntry("Warning: Deepgram API key not set", "warning");
+    }
+    if (!env.ANTHROPIC_API_KEY) {
+      addLogEntry("Warning: Anthropic API key not set", "warning");
+    }
+  });
+
+  // Handle text input
+  textInput.addEventListener("keypress", async (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const text = textInput.value.trim();
+
+      if (!text) {
+        addLogEntry("No command entered", "warning");
+        return;
+      }
+
+      try {
+        addLogEntry(`Processing text command: ${text}`);
+        await executeCommand(text);
+        textInput.value = ""; // Clear input after successful execution
+      } catch (error) {
+        console.error("Command execution error:", error);
+        addLogEntry(`Error: ${error.message}`, "error");
+      }
+    }
+  });
+
+  // Process command function
+  async function processCommand() {
+    try {
+      if (!finalTranscript.trim()) {
+        addLogEntry("No command to process", "warning");
+        return;
+      }
+
+      processBtn.disabled = true;
+
+      // Temporarily disable recording
+      const wasRecording = isRecording;
+      if (wasRecording) {
+        await ipcRenderer.invoke("stop-deepgram");
+        isRecording = false;
+      }
+
+      // Process the command
+      addLogEntry(`Processing command: ${finalTranscript}`);
+      await executeCommand(finalTranscript);
+
+      // Clear transcript
+      finalTranscript = "";
+      transcriptEl.textContent = "Waiting for speech...";
+
+      // Resume recording if it was active
+      if (wasRecording) {
+        const success = await ipcRenderer.invoke("start-deepgram");
+        if (success) {
+          isRecording = true;
+        }
+      }
+    } catch (error) {
+      console.error("Error processing command:", error);
+      addLogEntry(`Error: ${error.message}`, "error");
+    } finally {
+      processBtn.disabled = false;
+    }
+  }
+
+  // Start/Stop recording
+  startBtn.addEventListener("click", async () => {
+    try {
+      if (!isRecording) {
+        addLogEntry("Starting audio capture...");
+
+        // Initialize audio if not already done
+        if (!audioContext || audioContext.state !== "running") {
+          const initialized = await initializeAudio();
+          if (!initialized) {
+            throw new Error("Failed to initialize audio");
+          }
         }
 
-        // Send audio data to main process
-        ipcRenderer.send("send-audio", pcmData.buffer);
+        // Resume audio context if it's suspended
+        if (audioContext.state === "suspended") {
+          await audioContext.resume();
+          addLogEntry("Audio context resumed");
+        }
+
+        // Start Deepgram connection
+        addLogEntry("Connecting to Deepgram...");
+        const success = await ipcRenderer.invoke("start-deepgram");
+
+        if (success) {
+          isRecording = true;
+          startBtn.textContent = "Stop Recording";
+          finalTranscript = "";
+          transcriptEl.textContent = "Listening...";
+          processBtn.disabled = true;
+          micVisualization.classList.add("recording");
+          recordingStatus.classList.add("active");
+          addLogEntry("Recording started successfully");
+        } else {
+          throw new Error("Failed to start Deepgram connection");
+        }
+      } else {
+        await stopRecording();
       }
-    };
+    } catch (error) {
+      console.error("Recording error:", error);
+      addLogEntry(`Error: ${error.message}`, "error");
+      await stopRecording();
+    }
+  });
 
-    // Update UI
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    recordingIndicator.style.display = "inline";
-    statusText.textContent = "Recording...";
+  // Process command button
+  processBtn.addEventListener("click", processCommand);
 
-    // Start visualization
-    visualize(stream);
+  // Handle transcript updates from Deepgram
+  ipcRenderer.on("deepgram-transcript", (event, data) => {
+    if (!data?.channel?.alternatives?.[0]) return;
 
-    mediaRecorder.ondataavailable = (event) => {
-      audioChunks.push(event.data);
-    };
+    const transcript = data.channel.alternatives[0].transcript || "";
 
-    mediaRecorder.onstop = async () => {
+    if (data.is_final) {
+      finalTranscript += transcript + " ";
+      transcriptEl.textContent = finalTranscript;
+      processBtn.disabled = !finalTranscript.trim();
+      addLogEntry(`Transcript: ${transcript}`);
+    } else {
+      transcriptEl.textContent = finalTranscript + transcript;
+    }
+  });
+
+  // Handle Deepgram connection status
+  ipcRenderer.on("deepgram-ready", () => {
+    addLogEntry("Connected to Deepgram", "success");
+  });
+
+  ipcRenderer.on("deepgram-closed", (event, data) => {
+    addLogEntry(`Connection closed: ${data.reason}`);
+    stopRecording();
+  });
+
+  ipcRenderer.on("deepgram-error", (event, error) => {
+    addLogEntry(`Deepgram error: ${error}`, "error");
+    stopRecording();
+  });
+
+  // Helper function to stop recording
+  async function stopRecording() {
+    try {
+      if (isRecording) {
+        addLogEntry("Stopping recording...");
+        await ipcRenderer.invoke("stop-deepgram");
+      }
+
       isRecording = false;
-      const blob = new Blob(audioChunks, { type: "audio/webm" });
-      audioChunks = [];
+      startBtn.textContent = "Start Recording";
+      micVisualization.classList.remove("recording");
+      recordingStatus.classList.remove("active");
+      updateWaveAnimation(false);
 
-      // Clean up audio processing
-      processor.disconnect();
-      source.disconnect();
-
-      // Stop Deepgram connection
-      await ipcRenderer.invoke("stop-deepgram");
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        const buffer = Buffer.from(reader.result);
-        ipcRenderer.send("save-audio", buffer);
-      };
-      reader.readAsArrayBuffer(blob);
-
-      // Clean up visualization
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-        drawEmptyVisualizer();
+      // Clean up audio resources
+      if (audioProcessor) {
+        audioProcessor.disconnect();
+        audioProcessor = null;
+      }
+      if (audioStream) {
+        audioStream.getTracks().forEach((track) => track.stop());
+        audioStream = null;
       }
       if (audioContext) {
-        audioContext.close();
+        await audioContext.close();
         audioContext = null;
       }
 
-      // Reset UI
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-      recordingIndicator.style.display = "none";
-      statusText.textContent = "Saving...";
-    };
-
-    mediaRecorder.start();
-  } catch (error) {
-    statusText.textContent = `Error: ${error.message}`;
-    console.error("Error starting recording:", error);
+      // Enable process button if we have a transcript
+      processBtn.disabled = !finalTranscript.trim();
+      addLogEntry("Recording stopped");
+    } catch (error) {
+      console.error("Error stopping recording:", error);
+      addLogEntry(`Error stopping recording: ${error.message}`, "error");
+    }
   }
+
+  // Helper function to add log entries
+  function addLogEntry(message, type = "") {
+    const entry = document.createElement("div");
+    entry.className = `log-entry${type ? " " + type : ""}`;
+    entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    executionLog.appendChild(entry);
+    executionLog.scrollTop = executionLog.scrollHeight;
+  }
+
+  // Execute command function
+  async function executeCommand(text) {
+    try {
+      addLogEntry(`Processing command: ${text}`);
+
+      const result = await ipcRenderer.invoke("get-osa-script", text);
+
+      if (!result.success) {
+        addLogEntry(`Error: ${result.error}`, "error");
+        return;
+      }
+
+      addLogEntry("Executing script...");
+      const output = await ipcRenderer.invoke(
+        "execute-script",
+        result.response
+      );
+      addLogEntry(`Output: ${output}`, "success");
+    } catch (error) {
+      console.error("Script execution error:", error);
+      addLogEntry(`Error: ${error.message}`, "error");
+    }
+  }
+
+  // Clean up when window is closed
+  window.addEventListener("beforeunload", () => {
+    stopRecording();
+  });
 });
-
-stopBtn.addEventListener("click", () => {
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    mediaRecorder.stop();
-  }
-});
-
-// Listen for save path from main process
-ipcRenderer.on("audio-saved", async (event, path) => {
-  savePath.textContent = path;
-  statusText.textContent = "Transcribing...";
-
-  try {
-    // Send the path to main process to handle the Deepgram API call
-    ipcRenderer.send("transcribe-audio", path);
-  } catch (error) {
-    console.error("Error sending transcription request:", error);
-    statusText.textContent = "Error during transcription";
-  }
-});
-
-// Listen for transcription response
-ipcRenderer.on("transcription-complete", (event, result) => {
-  if (result.error) {
-    statusText.textContent = `Transcription Error: ${result.error}`;
-    return;
-  }
-
-  statusText.textContent = "Transcription Complete";
-
-  // Add transcription result to the UI
-  const transcriptionDiv =
-    document.getElementById("transcription") || document.createElement("div");
-  transcriptionDiv.id = "transcription";
-  transcriptionDiv.className = "transcription";
-  transcriptionDiv.innerHTML = `
-    <h3>Transcription Result:</h3>
-    <p>${result.transcript}</p>
-  `;
-
-  // Add to document if it doesn't exist
-  if (!document.getElementById("transcription")) {
-    document.querySelector(".status").after(transcriptionDiv);
-  }
-});
-
-// Update the live transcription display
-function updateLiveTranscription(currentText, isFinal = false) {
-  const transcriptionDiv =
-    document.getElementById("transcription") || document.createElement("div");
-  transcriptionDiv.id = "transcription";
-  transcriptionDiv.className = "transcription";
-
-  // Create history element if it doesn't exist
-  let historyEl = document.getElementById("transcriptionHistory");
-  if (!historyEl) {
-    historyEl = document.createElement("div");
-    historyEl.id = "transcriptionHistory";
-    historyEl.className = "transcription-history";
-  }
-
-  // Create current transcription element
-  const liveTranscriptionEl =
-    document.getElementById("liveTranscription") || document.createElement("p");
-  liveTranscriptionEl.id = "liveTranscription";
-  liveTranscriptionEl.className = "current-transcription";
-
-  // Update the display
-  transcriptionDiv.innerHTML = `
-    <h3>Live Transcription:</h3>
-  `;
-
-  // Add history of final transcripts
-  if (transcriptHistory.length > 0) {
-    historyEl.innerHTML = transcriptHistory
-      .map((text) => `<p class="transcript-entry">${text}</p>`)
-      .join("");
-    transcriptionDiv.appendChild(historyEl);
-  }
-
-  // Add current transcript if there is one
-  if (currentText && currentText.trim()) {
-    liveTranscriptionEl.textContent = currentText;
-    transcriptionDiv.appendChild(liveTranscriptionEl);
-  }
-
-  // Add to document if it doesn't exist
-  if (!document.getElementById("transcription")) {
-    document.querySelector(".container").appendChild(transcriptionDiv);
-  }
-
-  // Scroll to bottom to show latest text
-  transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
-}
