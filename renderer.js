@@ -404,6 +404,146 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // AI Input Component functionality
+  const aiInputTextarea = document.getElementById("textInput");
+  const attachBtn = document.getElementById("attachBtn");
+  const searchToggle = document.getElementById("searchToggle");
+  const sendBtn = document.getElementById("sendBtn");
+  const aiInputStatus = document.getElementById("aiInputStatus");
+  const loadingSpinner = sendBtn.querySelector(".loading-spinner");
+  const arrowIcon = sendBtn.querySelector(".arrow-icon");
+
+  let isSearchEnabled = true;
+  let isProcessing = false;
+
+  // Auto-resize textarea
+  function adjustTextareaHeight() {
+    aiInputTextarea.style.height = "48px";
+    const scrollHeight = aiInputTextarea.scrollHeight;
+    const maxHeight = 164;
+    const newHeight = Math.min(scrollHeight, maxHeight);
+    aiInputTextarea.style.height = `${newHeight}px`;
+  }
+
+  // Update send button state
+  function updateSendButtonState() {
+    const hasText = aiInputTextarea.value.trim().length > 0;
+    sendBtn.disabled = !hasText || isProcessing;
+    
+    if (isProcessing) {
+      sendBtn.style.background = "rgba(255, 255, 255, 0.05)";
+      sendBtn.style.color = "var(--text-secondary)";
+    } else if (hasText) {
+      sendBtn.style.background = "rgba(10, 132, 255, 0.15)";
+      sendBtn.style.color = "var(--primary)";
+    } else {
+      sendBtn.style.background = "rgba(255, 255, 255, 0.05)";
+      sendBtn.style.color = "var(--text-secondary)";
+    }
+  }
+
+  // Update status text
+  function updateStatusText(text, thinking = false) {
+    aiInputStatus.textContent = text;
+    aiInputStatus.classList.toggle("thinking", thinking);
+  }
+
+  // Handle AI input submission
+  async function handleAIInputSubmit() {
+    const text = aiInputTextarea.value.trim();
+    if (!text || isProcessing) return;
+
+    isProcessing = true;
+    updateSendButtonState();
+    updateStatusText("AI is thinking...", true);
+    
+    // Show loading spinner
+    arrowIcon.style.display = "none";
+    loadingSpinner.style.display = "flex";
+
+    try {
+      addLogEntry(`Processing AI command: ${text} ${isSearchEnabled ? "(with search)" : ""}`);
+      
+      // Execute the command using existing function
+      await executeCommand(text);
+      
+      // Clear input
+      aiInputTextarea.value = "";
+      adjustTextareaHeight();
+      
+      updateStatusText("Command executed successfully!");
+      
+      // Reset status after delay
+      setTimeout(() => {
+        updateStatusText("Ready to submit!");
+      }, 2000);
+      
+    } catch (error) {
+      console.error("AI Input error:", error);
+      addLogEntry(`Error: ${error.message}`, "error");
+      updateStatusText("Error occurred. Please try again.");
+      
+      setTimeout(() => {
+        updateStatusText("Ready to submit!");
+      }, 3000);
+    } finally {
+      isProcessing = false;
+      updateSendButtonState();
+      
+      // Hide loading spinner
+      arrowIcon.style.display = "block";
+      loadingSpinner.style.display = "none";
+    }
+  }
+
+  // Event listeners for AI Input
+  aiInputTextarea.addEventListener("input", () => {
+    adjustTextareaHeight();
+    updateSendButtonState();
+  });
+
+  aiInputTextarea.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleAIInputSubmit();
+    }
+  });
+
+  sendBtn.addEventListener("click", handleAIInputSubmit);
+
+  // Search toggle functionality
+  searchToggle.addEventListener("click", () => {
+    isSearchEnabled = !isSearchEnabled;
+    searchToggle.classList.toggle("active", isSearchEnabled);
+    
+    if (isSearchEnabled) {
+      addLogEntry("Web search enabled for AI commands");
+      updateStatusText("Ready to submit with search!");
+    } else {
+      addLogEntry("Web search disabled for AI commands");
+      updateStatusText("Ready to submit!");
+    }
+    
+    setTimeout(() => {
+      updateStatusText("Ready to submit!");
+    }, 2000);
+  });
+
+  // Attach button functionality (placeholder)
+  attachBtn.addEventListener("click", () => {
+    addLogEntry("File attachment feature coming soon!", "warning");
+    updateStatusText("File attachment coming soon!");
+    
+    setTimeout(() => {
+      updateStatusText("Ready to submit!");
+    }, 2000);
+  });
+
+  // Initialize AI input component
+  searchToggle.classList.add("active"); // Start with search enabled
+  updateSendButtonState();
+  updateStatusText("Ready to submit!");
+
   // Clean up when window is closed
   window.addEventListener("beforeunload", () => {
     stopRecording();
