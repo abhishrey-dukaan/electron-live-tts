@@ -934,6 +934,11 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
     try {
       addLogEntry(`🚀 Processing command: "${text}"`);
 
+      // Check for stop/cancel commands first
+      if (isStopCommand(text)) {
+        return await handleStopCommand(text);
+      }
+
       // Check for web-specific tasks first
       if (isWebTask(text)) {
         return await executeWebTask(text);
@@ -955,6 +960,63 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
     } catch (error) {
       console.error("Task execution error:", error);
       addLogEntry(`❌ Execution error: ${error.message}`, "error");
+      return false;
+    }
+  }
+
+  // Check if this is a stop/cancel command
+  function isStopCommand(text) {
+    const stopKeywords = [
+      'stop', 'cancel', 'abort', 'halt', 'quit task', 'stop task', 
+      'cancel task', 'stop it', 'cancel it', 'abort task', 'end task'
+    ];
+    
+    const lowerText = text.toLowerCase().trim();
+    return stopKeywords.some(keyword => 
+      lowerText === keyword || 
+      lowerText.startsWith(keyword + ' ') ||
+      lowerText.endsWith(' ' + keyword) ||
+      lowerText.includes(' ' + keyword + ' ')
+    );
+  }
+
+  // Handle stop/cancel commands
+  async function handleStopCommand(text) {
+    try {
+      addLogEntry(`🛑 Stop command detected: "${text}"`);
+      
+      // Stop any ongoing task execution
+      const stopResult = await ipcRenderer.invoke("stop-task");
+      
+      if (stopResult.success) {
+        if (stopResult.wasCancelled) {
+          addLogEntry(`🛑 Cancelled task: "${stopResult.cancelledTask}"`, "success");
+          addLogEntry("🎤 Ready for your next command", "success");
+        } else {
+          addLogEntry("🛑 No active tasks to cancel", "warning");
+          addLogEntry("🎤 Ready for your next command", "success");
+        }
+        
+        // Notify overlay about cancellation
+        ipcRenderer.send("command-success", text);
+        
+        // Reset UI state
+        isProcessingCommand = false;
+        currentTranscript = "";
+        
+        // Update transcript display
+        const transcriptEl = document.getElementById("transcript");
+        transcriptEl.textContent = "🎤 Ready for your next command...";
+        
+        return true;
+      } else {
+        addLogEntry("❌ Failed to stop tasks", "error");
+        return false;
+      }
+      
+    } catch (error) {
+      console.error("Error handling stop command:", error);
+      addLogEntry(`❌ Error stopping tasks: ${error.message}`, "error");
       return false;
     }
   }

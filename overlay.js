@@ -267,12 +267,112 @@ ipcRenderer.on("task-error", (event, data) => {
   updateStatus('error');
 });
 
+// Handle minimize button click
+async function handleMinimize() {
+  try {
+    const result = await ipcRenderer.invoke("minimize-overlay");
+    if (result.success) {
+      console.log("Overlay minimized to tray");
+    } else {
+      console.error("Failed to minimize overlay:", result.message);
+    }
+  } catch (error) {
+    console.error("Error minimizing overlay:", error);
+  }
+}
+
+// Handle manual text input commands
+async function handleManualCommand() {
+  const input = document.getElementById('manualInput');
+  const sendButton = document.getElementById('sendButton');
+  const command = input.value.trim();
+  
+  if (!command) return;
+  
+  // Clear input and disable while processing
+  input.value = '';
+  input.disabled = true;
+  sendButton.disabled = true;
+  
+  // Update display to show typed command
+  currentTranscript = command;
+  transcriptText.textContent = `⌨️ ${command}`;
+  updateStatus('processing');
+  
+  try {
+    // Send command to main process (same as voice commands)
+    const result = await ipcRenderer.invoke('execute-command', command);
+    console.log('Manual command executed:', result);
+  } catch (error) {
+    console.error('Error executing manual command:', error);
+    transcriptText.textContent = `❌ Failed: "${command}"`;
+    updateStatus('error');
+    
+    // Reset after error
+    setTimeout(() => {
+      currentTranscript = "";
+      transcriptText.textContent = "🎤 Ready for next command...";
+      updateStatus();
+    }, 4000);
+  } finally {
+    // Re-enable input after command execution
+    input.disabled = false;
+    sendButton.disabled = false;
+    input.focus();
+  }
+}
+
+// Update transcript display for both voice and manual input
+function updateTranscript(text) {
+  currentTranscript = text;
+  transcriptText.textContent = text;
+  updateTimestamp();
+}
+
 // Initialize overlay
 document.addEventListener("DOMContentLoaded", () => {
   updateTimestamp();
   
+  // Clear any residual text and set initial state
+  currentTranscript = "";
+  transcriptText.textContent = "🎤 Ready for commands...";
+  updateStatus();
+  
   // Update timestamp every second
   setInterval(updateTimestamp, 1000);
   
-  console.log("Overlay widget initialized");
+  // Add minimize button event listener
+  const minimizeButton = document.getElementById("minimizeButton");
+  if (minimizeButton) {
+    minimizeButton.addEventListener("click", handleMinimize);
+  }
+  
+  // Set up manual input handlers
+  const manualInput = document.getElementById('manualInput');
+  const sendButton = document.getElementById('sendButton');
+  
+  if (manualInput) {
+    // Handle Enter key
+    manualInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && !manualInput.disabled) {
+        handleManualCommand();
+      }
+    });
+    
+    // Auto-focus input for convenience
+    manualInput.focus();
+    
+    // Also handle input changes to enable/disable send button
+    manualInput.addEventListener('input', () => {
+      if (sendButton) {
+        sendButton.disabled = !manualInput.value.trim() || manualInput.disabled;
+      }
+    });
+  }
+  
+  if (sendButton) {
+    sendButton.addEventListener('click', handleManualCommand);
+  }
+  
+  console.log("Overlay widget initialized with manual input support");
 }); 

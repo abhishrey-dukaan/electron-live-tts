@@ -85,7 +85,9 @@ class TaskOrchestrator {
 - Play/Pause Spotify: osascript -e 'tell application "Spotify" to playpause' 2>/dev/null
 
 🪟 WINDOW ACTIONS:
-- Minimize window: osascript -e 'tell application "System Events" to set frontApp to name of first application process whose frontmost is true' -e 'tell application frontApp to set miniaturized of front window to true'
+- Minimize window: First exit full screen (Escape key), then press Cmd+M
+  Step 1: osascript -e 'tell application "System Events" to keystroke "escape"'
+  Step 2: osascript -e 'tell application "System Events" to keystroke "m" using command down'
 - Get window bounds: osascript -e 'tell application "Finder" to get bounds of window of desktop'
 
 💬 NOTIFICATION ACTIONS:
@@ -110,6 +112,7 @@ TASK BREAKDOWN RULES:
 7. Use cliclick for precise mouse/keyboard operations
 8. Use osascript for application control and system integration
 9. Use shell commands for file operations and system queries
+10. For window minimizing: ALWAYS exit full screen first (Escape), then use Cmd+M
 
 STEP TYPES:
 - KEYBOARD: Keyboard shortcuts and text input
@@ -132,6 +135,10 @@ Example breakdown for "take a screenshot and open downloads folder":
 1. SYSTEM: Take screenshot
 2. FILE: Open Downloads folder
 
+Example breakdown for "minimize this window":
+1. KEYBOARD: Exit full screen mode (if applicable)
+2. KEYBOARD: Minimize the window using Cmd+M
+
 Return ONLY a JSON response in this exact format:
 {
   "success": true,
@@ -150,6 +157,29 @@ Return ONLY a JSON response in this exact format:
       "description": "Launch Chrome browser",
       "script": "osascript -e 'tell application \\"Google Chrome\\" to activate' 2>/dev/null || osascript -e 'tell application \\"Arc\\" to activate' 2>/dev/null || osascript -e 'tell application \\"Safari\\" to activate'",
       "delayAfter": 2000,
+      "continueOnError": false
+    }
+  ]
+}
+
+For minimize window commands, use this format:
+{
+  "success": true,
+  "steps": [
+    {
+      "stepNumber": 1,
+      "type": "KEYBOARD",
+      "description": "Exit full screen mode if active",
+      "script": "osascript -e 'tell application \\"System Events\\" to keystroke \\"escape\\"'",
+      "delayAfter": 500,
+      "continueOnError": true
+    },
+    {
+      "stepNumber": 2,
+      "type": "KEYBOARD",
+      "description": "Minimize the window using Cmd+M",
+      "script": "osascript -e 'tell application \\"System Events\\" to keystroke \\"m\\" using command down'",
+      "delayAfter": 500,
       "continueOnError": false
     }
   ]
@@ -930,6 +960,10 @@ For quit/close tasks, prefer keyboard shortcuts:
 - Cmd+W to close windows
 - Alt+F4 equivalent
 
+For minimize window tasks, ALWAYS use this sequence:
+- First: Press Escape to exit full screen (if active)
+- Then: Press Cmd+M to minimize the window
+
 If you cannot see the target application or provide solutions:
 {
   "success": false,
@@ -1111,6 +1145,10 @@ For quit/close tasks, prefer keyboard shortcuts:
 - Cmd+Q to quit applications
 - Cmd+W to close windows
 - Alt+F4 equivalent
+
+For minimize window tasks, ALWAYS use this sequence:
+- First: Press Escape to exit full screen (if active)
+- Then: Press Cmd+M to minimize the window
 
 If you cannot see the target application or provide solutions:
 {
@@ -1310,16 +1348,35 @@ If you cannot see the target application or provide solutions:
 
   // Stop current execution
   stop() {
+    const wasExecuting = this.isExecuting;
+    const currentTaskName = this.currentTask;
+    
     console.log("🛑 Stopping task execution");
+    
+    if (wasExecuting && currentTaskName) {
+      console.log(`🛑 Cancelling current task: "${currentTaskName}"`);
+    } else {
+      console.log("🛑 No active task to cancel");
+    }
+    
     this.shouldStop = true;
     this.isExecuting = false;
     this.currentTask = null;
     this.executionQueue = [];
     
-    // Notify that task was cancelled
-    if (this.onTaskComplete) {
-      this.onTaskComplete(false, "Task cancelled by user");
+    // Notify that task was cancelled only if there was an active task
+    if (wasExecuting && this.onTaskComplete) {
+      this.onTaskComplete(false, `Task cancelled by user: "${currentTaskName}"`);
     }
+    
+    return {
+      success: true,
+      wasCancelled: wasExecuting,
+      cancelledTask: currentTaskName,
+      message: wasExecuting ? 
+        `Cancelled task: "${currentTaskName}"` : 
+        "No active task to cancel"
+    };
   }
 
   // Get current status

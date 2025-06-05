@@ -173,28 +173,51 @@ function createOverlayWindow() {
   const { width, height } = primaryDisplay.workAreaSize;
 
   overlayWindow = new BrowserWindow({
-    width: 350,
-    height: 150,
-    x: 20, // 20px from left edge
-    y: height - 170, // 20px from bottom
+    width: 380,
+    height: 240,
+    x: Math.max(20, Math.min(width - 380, width - 400)), // Right side, but ensure it fits
+    y: Math.max(20, height - 280), // Bottom area with padding
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
       backgroundThrottling: false,
     },
-    // Overlay window properties - make it always visible and persistent
+    // Overlay window properties - make it draggable and persistent
     alwaysOnTop: true,
     skipTaskbar: true,
     frame: false,
     transparent: true,
     resizable: false,
-    movable: false,
-    focusable: false,
+    movable: true, // Allow dragging
+    focusable: true, // Allow focusing for interactions
     show: true, // Always show from start
     hasShadow: false,
+    minimizable: false,
+    maximizable: false,
   });
 
   overlayWindow.loadFile("overlay.html");
+
+  // Add bounds checking to keep window in viewport
+  overlayWindow.on('move', () => {
+    const bounds = overlayWindow.getBounds();
+    const display = screen.getDisplayMatching(bounds);
+    const { x: screenX, y: screenY, width: screenWidth, height: screenHeight } = display.workArea;
+    
+    let newX = bounds.x;
+    let newY = bounds.y;
+    
+    // Keep window within screen bounds
+    if (bounds.x < screenX) newX = screenX;
+    if (bounds.y < screenY) newY = screenY;
+    if (bounds.x + bounds.width > screenX + screenWidth) newX = screenX + screenWidth - bounds.width;
+    if (bounds.y + bounds.height > screenY + screenHeight) newY = screenY + screenHeight - bounds.height;
+    
+    // Only move if necessary to avoid infinite loops
+    if (newX !== bounds.x || newY !== bounds.y) {
+      overlayWindow.setBounds({ x: newX, y: newY, width: bounds.width, height: bounds.height });
+    }
+  });
 
   // Make overlay persistent across all screens and workspaces
   overlayWindow.setVisibleOnAllWorkspaces(true, {visibleOnFullScreen: true});
@@ -213,7 +236,7 @@ function createOverlayWindow() {
     overlayWindow.setAlwaysOnTop(true, 'floating');
   });
 
-  // Force overlay to stay visible and positioned correctly
+  // Keep overlay visible and on top (but allow user positioning)
   setInterval(() => {
     if (overlayWindow && !overlayWindow.isDestroyed() && !app.isQuiting) {
       // Ensure overlay stays on top and visible
@@ -221,19 +244,7 @@ function createOverlayWindow() {
         overlayWindow.show();
       }
       overlayWindow.setAlwaysOnTop(true, 'floating');
-      
-      // Keep it positioned in bottom left
-      const { screen } = require('electron');
-      const primaryDisplay = screen.getPrimaryDisplay();
-      const { width, height } = primaryDisplay.workAreaSize;
-      const [currentX, currentY] = overlayWindow.getPosition();
-      const expectedX = 20;
-      const expectedY = height - 170;
-      
-      // Reposition if it moved
-      if (currentX !== expectedX || currentY !== expectedY) {
-        overlayWindow.setPosition(expectedX, expectedY);
-      }
+      // Note: Removed auto-repositioning to allow user dragging
     }
   }, 5000); // Check every 5 seconds
   
@@ -366,6 +377,15 @@ ipcMain.on("command-error", (event, command, error) => {
   if (overlayWindow) {
     overlayWindow.webContents.send("command-error", command, error);
   }
+});
+
+// Handle overlay minimize request
+ipcMain.handle("minimize-overlay", async () => {
+  if (overlayWindow) {
+    overlayWindow.hide();
+    return { success: true, message: "Overlay minimized to tray" };
+  }
+  return { success: false, message: "Overlay window not found" };
 });
 
 // Enhanced Deepgram connection function with rate limiting
@@ -864,8 +884,9 @@ ipcMain.handle("get-task-status", async () => {
 
 // Stop current task execution
 ipcMain.handle("stop-task", async () => {
-  taskOrchestrator.stop();
-  return { success: true, message: "Task execution stopped" };
+  const result = taskOrchestrator.stop();
+  console.log("🛑 Stop task result:", result);
+  return result;
 });
 
 // Take a screenshot for verification
