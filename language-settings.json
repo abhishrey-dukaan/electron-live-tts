@@ -1,0 +1,7 @@
+{
+  "language": "en",
+  "model": "nova-3",
+  "onboardingCompleted": false,
+  "enableInterimResults": true,
+  "enablePunctuation": true
+}
