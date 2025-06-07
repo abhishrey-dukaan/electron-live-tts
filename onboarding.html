@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceMac Setup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .glass {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        .step-indicator {
+            transition: all 0.3s ease;
+        }
+        .step-active {
+            background: #667eea;
+            color: white;
+        }
+        .step-completed {
+            background: #10b981;
+            color: white;
+        }
+        .permission-card {
+            transition: all 0.3s ease;
+        }
+        .permission-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center">
+    <div class="container mx-auto px-4 max-w-4xl">
+        <!-- Welcome Screen -->
+        <div id="welcome-screen" class="glass rounded-2xl p-8 text-center text-white">
+            <div class="mb-6">
+                <div class="w-24 h-24 mx-auto mb-4 rounded-full bg-white bg-opacity-20 flex items-center justify-center">
+                    <span class="text-4xl">🎤</span>
+                </div>
+                <h1 class="text-4xl font-bold mb-2">Welcome to VoiceMac</h1>
+                <p class="text-xl opacity-90">Your intelligent voice assistant for macOS</p>
+            </div>
+            
+            <div class="grid md:grid-cols-3 gap-6 mb-8">
+                <div class="glass rounded-xl p-6">
+                    <div class="text-3xl mb-3">⚡</div>
+                    <h3 class="font-semibold mb-2">Control Your Mac</h3>
+                    <p class="text-sm opacity-80">Open apps, manage files, control system settings with your voice</p>
+                </div>
+                <div class="glass rounded-xl p-6">
+                    <div class="text-3xl mb-3">🌐</div>
+                    <h3 class="font-semibold mb-2">Web Automation</h3>
+                    <p class="text-sm opacity-80">Search YouTube, browse websites, automate web tasks hands-free</p>
+                </div>
+                <div class="glass rounded-xl p-6">
+                    <div class="text-3xl mb-3">🤖</div>
+                    <h3 class="font-semibold mb-2">AI-Powered</h3>
+                    <p class="text-sm opacity-80">Smart command understanding and task automation</p>
+                </div>
+            </div>
+            
+            <button id="start-setup" class="btn-primary px-8 py-4 rounded-xl text-white font-semibold text-lg transition-all duration-300">
+                Get Started
+            </button>
+        </div>
+
+        <!-- Setup Steps -->
+        <div id="setup-screen" class="glass rounded-2xl p-8 text-white hidden">
+            <!-- Progress Indicator -->
+            <div class="mb-8">
+                <div class="flex justify-between items-center mb-4">
+                    <div id="step-1" class="step-indicator step-active w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">1</div>
+                    <div class="flex-1 h-1 bg-white bg-opacity-20 mx-4"></div>
+                    <div id="step-2" class="step-indicator w-8 h-8 rounded-full bg-white bg-opacity-20 flex items-center justify-center text-sm font-bold">2</div>
+                    <div class="flex-1 h-1 bg-white bg-opacity-20 mx-4"></div>
+                    <div id="step-3" class="step-indicator w-8 h-8 rounded-full bg-white bg-opacity-20 flex items-center justify-center text-sm font-bold">3</div>
+                    <div class="flex-1 h-1 bg-white bg-opacity-20 mx-4"></div>
+                    <div id="step-4" class="step-indicator w-8 h-8 rounded-full bg-white bg-opacity-20 flex items-center justify-center text-sm font-bold">4</div>
+                </div>
+                <div class="text-center">
+                    <span id="step-title" class="text-lg font-semibold">System Permissions</span>
+                </div>
+            </div>
+
+            <!-- Step 1: Permissions -->
+            <div id="permissions-step" class="step-content">
+                <h2 class="text-2xl font-bold mb-6 text-center">Grant System Permissions</h2>
+                <p class="text-center mb-8 opacity-90">VoiceMac needs these permissions to control your Mac safely and securely</p>
+                
+                <div class="grid gap-6 mb-8">
+                    <div class="permission-card glass rounded-xl p-6 flex items-center">
+                        <div class="w-16 h-16 rounded-full bg-blue-500 flex items-center justify-center mr-6">
+                            <span class="text-2xl">🎤</span>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-lg mb-2">Microphone Access</h3>
+                            <p class="opacity-80 mb-3">Required to listen to your voice commands</p>
+                            <button id="grant-microphone" class="bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-lg transition-colors">
+                                Grant Permission
+                            </button>
+                        </div>
+                        <div id="mic-status" class="w-8 h-8 rounded-full bg-gray-400"></div>
+                    </div>
+                    
+                    <div class="permission-card glass rounded-xl p-6 flex items-center">
+                        <div class="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center mr-6">
+                            <span class="text-2xl">🔒</span>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-lg mb-2">Accessibility Access</h3>
+                            <p class="opacity-80 mb-3">Required to control applications and system functions</p>
+                            <button id="grant-accessibility" class="bg-green-500 hover:bg-green-600 px-4 py-2 rounded-lg transition-colors">
+                                Open System Preferences
+                            </button>
+                        </div>
+                        <div id="accessibility-status" class="w-8 h-8 rounded-full bg-gray-400"></div>
+                    </div>
+                    
+                    <div class="permission-card glass rounded-xl p-6 flex items-center">
+                        <div class="w-16 h-16 rounded-full bg-purple-500 flex items-center justify-center mr-6">
+                            <span class="text-2xl">📷</span>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-lg mb-2">Screen Recording</h3>
+                            <p class="opacity-80 mb-3">Required for visual task automation and web control</p>
+                            <button id="grant-screen" class="bg-purple-500 hover:bg-purple-600 px-4 py-2 rounded-lg transition-colors">
+                                Open System Preferences
+                            </button>
+                        </div>
+                        <div id="screen-status" class="w-8 h-8 rounded-full bg-gray-400"></div>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <button id="continue-to-tutorial" class="btn-primary px-8 py-3 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        Continue to Tutorial
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Tutorial -->
+            <div id="tutorial-step" class="step-content hidden">
+                <h2 class="text-2xl font-bold mb-6 text-center">Interactive Tutorial</h2>
+                <div class="glass rounded-xl p-6 mb-6">
+                    <div id="tutorial-content" class="text-center">
+                        <div class="text-6xl mb-4">🎯</div>
+                        <h3 class="text-xl font-semibold mb-4">Let's Try Your First Command</h3>
+                        <p class="mb-6 opacity-90">Say: <span class="bg-white bg-opacity-20 px-3 py-1 rounded-lg font-mono">"open notes"</span></p>
+                        <button id="start-listening" class="bg-red-500 hover:bg-red-600 px-6 py-3 rounded-xl text-white font-semibold">
+                            🎤 Start Listening
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="tutorial-progress" class="grid grid-cols-3 gap-4 mb-6">
+                    <div class="tutorial-task glass rounded-lg p-4 text-center opacity-50">
+                        <div class="text-2xl mb-2">📱</div>
+                        <p class="text-sm">App Control</p>
+                    </div>
+                    <div class="tutorial-task glass rounded-lg p-4 text-center opacity-50">
+                        <div class="text-2xl mb-2">🌐</div>
+                        <p class="text-sm">Web Automation</p>
+                    </div>
+                    <div class="tutorial-task glass rounded-lg p-4 text-center opacity-50">
+                        <div class="text-2xl mb-2">⚙️</div>
+                        <p class="text-sm">System Control</p>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <button id="skip-tutorial" class="text-white opacity-70 hover:opacity-100 mr-4">Skip Tutorial</button>
+                    <button id="continue-to-preferences" class="btn-primary px-8 py-3 rounded-xl font-semibold hidden">
+                        Continue to Preferences
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 3: Preferences -->
+            <div id="preferences-step" class="step-content hidden">
+                <h2 class="text-2xl font-bold mb-6 text-center">Customize Your Experience</h2>
+                
+                <div class="grid md:grid-cols-2 gap-6 mb-8">
+                    <div class="glass rounded-xl p-6">
+                        <h3 class="font-semibold text-lg mb-4">Experience Level</h3>
+                        <div class="space-y-3">
+                            <label class="flex items-center">
+                                <input type="radio" name="experience" value="beginner" class="mr-3" checked>
+                                <div>
+                                    <div class="font-medium">Beginner</div>
+                                    <div class="text-sm opacity-70">Guided tutorials and simple commands</div>
+                                </div>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="experience" value="intermediate" class="mr-3">
+                                <div>
+                                    <div class="font-medium">Intermediate</div>
+                                    <div class="text-sm opacity-70">Essential commands and automation</div>
+                                </div>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="experience" value="advanced" class="mr-3">
+                                <div>
+                                    <div class="font-medium">Advanced</div>
+                                    <div class="text-sm opacity-70">Full features and customization</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="glass rounded-xl p-6">
+                        <h3 class="font-semibold text-lg mb-4">AI Features</h3>
+                        <div class="space-y-3">
+                            <label class="flex items-center">
+                                <input type="checkbox" id="enable-ai" class="mr-3" checked>
+                                <div>
+                                    <div class="font-medium">Enable AI Assistant</div>
+                                    <div class="text-sm opacity-70">Smart command understanding</div>
+                                </div>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="checkbox" id="enable-suggestions" class="mr-3" checked>
+                                <div>
+                                    <div class="font-medium">Smart Suggestions</div>
+                                    <div class="text-sm opacity-70">Context-aware command recommendations</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <button id="finish-setup" class="btn-primary px-8 py-3 rounded-xl font-semibold">
+                        Complete Setup
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 4: Completion -->
+            <div id="completion-step" class="step-content hidden text-center">
+                <div class="text-6xl mb-6">🎉</div>
+                <h2 class="text-3xl font-bold mb-4">You're All Set!</h2>
+                <p class="text-xl mb-8 opacity-90">VoiceMac is ready to assist you</p>
+                
+                <div class="glass rounded-xl p-6 mb-8">
+                    <h3 class="font-semibold text-lg mb-4">Quick Start Commands</h3>
+                    <div class="grid md:grid-cols-2 gap-4 text-left">
+                        <div>
+                            <div class="font-mono text-sm bg-white bg-opacity-20 p-2 rounded mb-1">"open safari"</div>
+                            <div class="font-mono text-sm bg-white bg-opacity-20 p-2 rounded mb-1">"search for cats on youtube"</div>
+                        </div>
+                        <div>
+                            <div class="font-mono text-sm bg-white bg-opacity-20 p-2 rounded mb-1">"take screenshot"</div>
+                            <div class="font-mono text-sm bg-white bg-opacity-20 p-2 rounded mb-1">"lock screen"</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button id="launch-app" class="btn-primary px-8 py-4 rounded-xl font-semibold text-lg">
+                    Launch VoiceMac
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="onboarding.js"></script>
+</body>
+</html> 

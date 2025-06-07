@@ -4,10 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Voice Assistant</title>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
     <style>
       * {
         margin: 0;
@@ -15,830 +11,587 @@
         box-sizing: border-box;
       }
 
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
       :root {
-        --primary: #0a84ff;
-        --primary-dark: #0071e3;
-        --success: #30d158;
-        --warning: #ffd60a;
-        --error: #ff453a;
-        --background: #000000;
-        --surface: #1c1c1e;
-        --surface-2: #2c2c2e;
-        --surface-3: #3c3c3e;
-        --text: #ffffff;
-        --text-secondary: #86868b;
-        --border-radius: 16px;
-        --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        --bg-primary: #0d1117;
+        --bg-secondary: #161b22;
+        --bg-tertiary: #21262d;
+        --bg-hover: #30363d;
+        --border-color: #30363d;
+        --border-muted: #21262d;
+        --text-primary: #f0f6fc;
+        --text-secondary: #7d8590;
+        --text-muted: #6e7681;
+        --accent-purple: #8b5cf6;
+        --accent-purple-hover: #a78bfa;
+        --accent-green: #238636;
+        --accent-green-hover: #2ea043;
+        --accent-red: #da3633;
+        --accent-red-hover: #f85149;
+        --accent-blue: #0969da;
+        --accent-orange: #fb8500;
+        --shadow-small: 0 2px 4px rgba(0,0,0,0.3);
+        --shadow-medium: 0 4px 12px rgba(0,0,0,0.4);
+        --radius-small: 6px;
+        --radius-medium: 8px;
+        --radius-large: 12px;
       }
 
       body {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        margin: 0;
-        padding: 20px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg-primary);
+        color: var(--text-primary);
         min-height: 100vh;
-        color: white;
-        overflow-x: hidden;
+        line-height: 1.5;
       }
 
       .container {
-        max-width: 800px;
+        max-width: 1200px;
         margin: 0 auto;
-        padding: 20px;
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 20px;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        padding: 24px;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 100vh;
+        gap: 24px;
       }
 
-      h1 {
-        text-align: center;
-        margin-bottom: 30px;
-        font-size: 2.5rem;
-        font-weight: 300;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-      }
-
-      .status-bar {
+      /* Header */
+      .header {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-large);
+        padding: 24px 32px;
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        margin-bottom: 20px;
-        padding: 15px 20px;
-        background: rgba(255, 255, 255, 0.15);
-        border-radius: 12px;
-        backdrop-filter: blur(5px);
+        gap: 16px;
       }
 
-      .connection-status {
+      .logo {
+        width: 48px;
+        height: 48px;
+        background: var(--accent-purple);
+        border-radius: var(--radius-medium);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        color: white;
+        flex-shrink: 0;
+      }
+
+      .header-content h1 {
+        font-size: 24px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+      }
+
+      .header-content p {
+        font-size: 14px;
+        color: var(--text-secondary);
+        font-weight: 400;
+      }
+
+      .status-badge {
+        margin-left: auto;
         display: flex;
         align-items: center;
         gap: 8px;
+        padding: 8px 16px;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-small);
+        font-size: 14px;
         font-weight: 500;
       }
 
-      .status {
-        padding: 6px 12px;
-        border-radius: 20px;
-        font-size: 0.9rem;
-        font-weight: 600;
-        transition: all 0.3s ease;
-      }
-
-      .status.connected {
-        background: rgba(34, 197, 94, 0.2);
-        color: #22c55e;
-        border: 1px solid rgba(34, 197, 94, 0.3);
-      }
-
-      .status.disconnected {
-        background: rgba(239, 68, 68, 0.2);
-        color: #ef4444;
-        border: 1px solid rgba(239, 68, 68, 0.3);
-      }
-
-      .status.reconnecting {
-        background: rgba(251, 191, 36, 0.2);
-        color: #fbbf24;
-        border: 1px solid rgba(251, 191, 36, 0.3);
-      }
-
-      .status.error {
-        background: rgba(239, 68, 68, 0.3);
-        color: #ef4444;
-        border: 1px solid rgba(239, 68, 68, 0.4);
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent-green);
         animation: pulse 2s infinite;
       }
 
       @keyframes pulse {
         0%, 100% { opacity: 1; }
-        50% { opacity: 0.7; }
+        50% { opacity: 0.6; }
       }
 
-      .controls {
-        display: flex;
-        gap: 15px;
-        margin-bottom: 30px;
-        flex-wrap: wrap;
-        justify-content: center;
+      /* Main Content */
+      .main-content {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
       }
 
-      .btn {
-        padding: 12px 24px;
-        border: none;
-        border-radius: 12px;
-        font-size: 1rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        backdrop-filter: blur(10px);
-        color: white;
-        min-width: 120px;
+      .panel {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-large);
+        padding: 24px;
+        height: fit-content;
       }
 
-      .btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-      }
-
-      .btn:active {
-        transform: translateY(0);
-      }
-
-      .btn.primary {
-        background: linear-gradient(135deg, #ff6b6b, #ee5a52);
-      }
-
-      .btn.secondary {
-        background: rgba(255, 255, 255, 0.2);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-      }
-
-      .btn.success {
-        background: linear-gradient(135deg, #51cf66, #40c057);
-      }
-
-      .btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-        transform: none;
-      }
-
-      .transcript-area {
-        margin-bottom: 30px;
-        padding: 20px;
-        background: rgba(0, 0, 0, 0.2);
-        border-radius: 12px;
-        min-height: 100px;
-        border: 2px solid rgba(255, 255, 255, 0.1);
-      }
-
-      .log-container {
-        background: rgba(0, 0, 0, 0.3);
-        border-radius: 12px;
-        max-height: 400px;
-        overflow-y: auto;
-        padding: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-      }
-
-      .log-entry {
-        margin-bottom: 8px;
-        padding: 8px 12px;
-        border-radius: 8px;
-        line-height: 1.4;
-        font-size: 0.95rem;
-      }
-
-      .log-entry.info {
-        background: rgba(59, 130, 246, 0.15);
-        border-left: 4px solid #3b82f6;
-      }
-
-      .log-entry.success {
-        background: rgba(34, 197, 94, 0.15);
-        border-left: 4px solid #22c55e;
-      }
-
-      .log-entry.error {
-        background: rgba(239, 68, 68, 0.15);
-        border-left: 4px solid #ef4444;
-      }
-
-      .log-entry.warning {
-        background: rgba(251, 191, 36, 0.15);
-        border-left: 4px solid #fbbf24;
-      }
-
-      /* Custom scrollbar */
-      .log-container::-webkit-scrollbar {
-        width: 8px;
-      }
-
-      .log-container::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 4px;
-      }
-
-      .log-container::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.3);
-        border-radius: 4px;
-      }
-
-      .log-container::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.5);
-      }
-
-      .current-transcript {
-        font-size: 1.1rem;
-        color: #e2e8f0;
-        font-style: italic;
-        min-height: 1.5rem;
-      }
-
-      .transcript-label {
-        font-size: 0.9rem;
-        color: #94a3b8;
-        margin-bottom: 10px;
-        font-weight: 500;
-      }
-
-      .task-progress {
-        margin: 20px 0;
-        padding: 15px;
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        display: none;
-      }
-
-      .task-progress.active {
-        display: block;
-      }
-
-      .progress-bar {
-        width: 100%;
-        height: 8px;
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 4px;
-        margin: 10px 0;
-        overflow: hidden;
-      }
-
-      .progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #3b82f6, #06b6d4);
-        border-radius: 4px;
-        transition: width 0.3s ease;
-        width: 0%;
-      }
-
-      @media (max-width: 768px) {
-        .controls {
-          flex-direction: column;
-          align-items: center;
-        }
-
-        .btn {
-          width: 100%;
-          max-width: 300px;
-        }
-
-        .status-bar {
-          flex-direction: column;
-          gap: 10px;
-          text-align: center;
-        }
-
-        h1 {
-          font-size: 2rem;
-        }
-      }
-
-      /* Settings Modal */
-      .modal {
-        display: none;
-        position: fixed;
-        z-index: 1000;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.8);
-        backdrop-filter: blur(10px);
-      }
-
-      .modal.active {
+      .panel-header {
         display: flex;
         align-items: center;
-        justify-content: center;
+        gap: 12px;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--border-muted);
       }
 
-      .modal-content {
-        background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 100%);
-        backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 20px;
-        padding: 30px;
-        width: 90%;
-        max-width: 800px;
-        max-height: 80vh;
-        overflow-y: auto;
-        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+      .panel-icon {
+        font-size: 18px;
+        color: var(--accent-purple);
       }
 
-      .modal-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 25px;
-        padding-bottom: 15px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-      }
-
-      .modal-title {
-        font-size: 1.8rem;
+      .panel-title {
+        font-size: 16px;
         font-weight: 600;
-        color: white;
-        margin: 0;
+        color: var(--text-primary);
       }
 
-      .close-btn {
-        background: none;
-        border: none;
-        color: white;
-        font-size: 1.5rem;
-        cursor: pointer;
-        padding: 5px;
-        border-radius: 5px;
-        transition: background-color 0.3s ease;
-      }
-
-      .close-btn:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-
-      .settings-section {
-        margin-bottom: 25px;
-      }
-
-      .settings-label {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: white;
-        margin-bottom: 10px;
-        display: block;
-      }
-
-      .settings-description {
-        font-size: 0.9rem;
-        color: rgba(255, 255, 255, 0.7);
-        margin-bottom: 15px;
-        line-height: 1.4;
-      }
-
-      .prompt-textarea {
-        width: 100%;
-        min-height: 400px;
-        background: rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 12px;
-        padding: 15px;
-        color: white;
-        font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-        font-size: 13px;
-        line-height: 1.5;
-        resize: vertical;
-        outline: none;
-        transition: border-color 0.3s ease;
-      }
-
-      .prompt-textarea:focus {
-        border-color: #0a84ff;
-        box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2);
-      }
-
-      .prompt-textarea::placeholder {
-        color: rgba(255, 255, 255, 0.5);
-      }
-
-      .settings-actions {
-        display: flex;
-        gap: 15px;
-        justify-content: flex-end;
-        margin-top: 25px;
-        padding-top: 20px;
-        border-top: 1px solid rgba(255, 255, 255, 0.2);
-      }
-
-      .action-btn {
-        padding: 12px 24px;
-        border: none;
-        border-radius: 10px;
-        font-weight: 600;
-        font-size: 14px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-      }
-
-      .action-btn.primary {
-        background: linear-gradient(135deg, #0a84ff, #0071e3);
-        color: white;
-      }
-
-      .action-btn.primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 25px rgba(10, 132, 255, 0.4);
-      }
-
-      .action-btn.secondary {
-        background: rgba(255, 255, 255, 0.1);
-        color: white;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-      }
-
-      .action-btn.secondary:hover {
-        background: rgba(255, 255, 255, 0.2);
-      }
-
-      .examples-section {
-        margin-top: 20px;
-        padding: 20px;
-        background: rgba(0, 0, 0, 0.2);
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-      }
-
-      .examples-title {
-        font-size: 1rem;
-        font-weight: 600;
-        color: white;
-        margin-bottom: 15px;
-      }
-
-      .examples-content {
-        background: rgba(0, 0, 0, 0.4);
-        padding: 15px;
-        border-radius: 8px;
-        overflow-x: auto;
-      }
-
-      .examples-content pre {
-        margin: 0;
-        font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-        font-size: 12px;
-        line-height: 1.4;
-        color: #e0e0e0;
-        white-space: pre-wrap;
-      }
-
-      /* Model Configuration Styles */
-      .model-config-section {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-
-      .model-type-config {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .model-label {
-        font-size: 12px;
-        font-weight: 600;
-        color: rgba(255, 255, 255, 0.9);
-      }
-
-      .model-selection {
-        display: flex;
-        gap: 8px;
-      }
-
-      .provider-select,
-      .model-select {
-        padding: 8px 12px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 8px;
-        color: white;
-        font-size: 11px;
-        min-width: 120px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-
-      .provider-select:hover,
-      .model-select:hover {
-        background: rgba(255, 255, 255, 0.12);
-        border-color: rgba(255, 255, 255, 0.25);
-      }
-
-      .provider-select:focus,
-      .model-select:focus {
-        outline: none;
-        background: rgba(255, 255, 255, 0.12);
-        border-color: rgba(59, 130, 246, 0.6);
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-      }
-
-      .provider-select option,
-      .model-select option {
-        background: rgba(20, 20, 30, 0.95);
-        color: white;
-        padding: 4px;
-      }
-
-      .model-actions {
+      /* Status Items */
+      .status-list {
         display: flex;
         flex-direction: column;
         gap: 12px;
-        margin-top: 8px;
       }
 
-      .test-results {
-        padding: 12px;
-        background: rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 8px;
-        font-size: 11px;
-        max-height: 200px;
-        overflow-y: auto;
-      }
-
-      .test-result-item {
+      .status-item {
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        padding: 4px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        justify-content: space-between;
+        padding: 12px 16px;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-muted);
+        border-radius: var(--radius-medium);
+        transition: all 0.2s ease;
       }
 
-      .test-result-item:last-child {
-        border-bottom: none;
+      .status-item:hover {
+        background: var(--bg-hover);
+        border-color: var(--border-color);
       }
 
-      .test-result-model {
+      .status-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+
+      .status-label span {
+        font-size: 16px;
+      }
+
+      .status-value {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
         font-weight: 500;
       }
 
-      .test-result-status {
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 10px;
+      .indicator {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .indicator.connected { background: var(--accent-green); }
+      .indicator.disconnected { background: var(--accent-red); }
+      .indicator.processing { background: var(--accent-orange); }
+      .indicator.ready { background: var(--accent-blue); }
+
+      /* Controls */
+      .controls-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .control-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px 16px;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-medium);
+        color: var(--text-primary);
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-decoration: none;
+      }
+
+      .control-btn:hover {
+        background: var(--bg-hover);
+        border-color: var(--accent-purple);
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-small);
+      }
+
+      .control-btn:active {
+        transform: translateY(0);
+      }
+
+      .control-btn.danger {
+        background: var(--accent-red);
+        border-color: var(--accent-red);
+        color: white;
+      }
+
+      .control-btn.danger:hover {
+        background: var(--accent-red-hover);
+        border-color: var(--accent-red-hover);
+      }
+
+      .control-btn.success {
+        background: var(--accent-green);
+        border-color: var(--accent-green);
+        color: white;
+      }
+
+      .control-btn.success:hover {
+        background: var(--accent-green-hover);
+        border-color: var(--accent-green-hover);
+      }
+
+      .control-btn.primary {
+        background: var(--accent-purple);
+        border-color: var(--accent-purple);
+        color: white;
+      }
+
+      .control-btn.primary:hover {
+        background: var(--accent-purple-hover);
+        border-color: var(--accent-purple-hover);
+      }
+
+      .control-btn.wide {
+        grid-column: 1 / -1;
+      }
+
+      /* Transcript Panel */
+      .transcript-panel {
+        grid-column: 1 / -1;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-large);
+        padding: 24px;
+        margin-top: 8px;
+      }
+
+      .transcript-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--border-muted);
+      }
+
+      .transcript-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 16px;
         font-weight: 600;
+        color: var(--text-primary);
       }
 
-      .test-result-status.success {
-        background: rgba(34, 197, 94, 0.2);
-        color: #22c55e;
+      .live-badge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        background: var(--accent-green);
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        color: white;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
       }
 
-      .test-result-status.failed {
-        background: rgba(239, 68, 68, 0.2);
-        color: #ef4444;
+      .live-dot {
+        width: 4px;
+        height: 4px;
+        background: white;
+        border-radius: 50%;
+        animation: pulse 1.5s infinite;
+      }
+
+      .transcript-content {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-muted);
+        border-radius: var(--radius-medium);
+        padding: 16px;
+        min-height: 200px;
+        max-height: 400px;
+        overflow-y: auto;
+        font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .log-entry {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 4px 0;
+        color: var(--text-secondary);
+      }
+
+      .log-entry:not(:last-child) {
+        border-bottom: 1px solid var(--border-muted);
+        padding-bottom: 8px;
+        margin-bottom: 8px;
+      }
+
+      .log-time {
+        color: var(--text-muted);
+        font-size: 11px;
+        flex-shrink: 0;
+        width: 60px;
+      }
+
+      .log-message {
+        flex: 1;
+      }
+
+      .log-entry.success .log-message {
+        color: var(--accent-green);
+      }
+
+      .log-entry.error .log-message {
+        color: var(--accent-red);
+      }
+
+      .log-entry.warning .log-message {
+        color: var(--accent-orange);
+      }
+
+      .log-entry.info .log-message {
+        color: var(--accent-blue);
+      }
+
+      .log-entry.primary .log-message {
+        color: var(--accent-purple);
+      }
+
+      /* Custom Scrollbar */
+      .transcript-content::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .transcript-content::-webkit-scrollbar-track {
+        background: var(--bg-secondary);
+        border-radius: 4px;
+      }
+
+      .transcript-content::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 4px;
+      }
+
+      .transcript-content::-webkit-scrollbar-thumb:hover {
+        background: var(--bg-hover);
+      }
+
+      /* Responsive Design */
+      @media (max-width: 768px) {
+        .container {
+          padding: 16px;
+          gap: 16px;
+        }
+
+        .main-content {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+
+        .controls-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .header {
+          padding: 20px 24px;
+        }
+
+        .panel {
+          padding: 20px;
+        }
+
+        .transcript-panel {
+          padding: 20px;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+        }
+
+        .status-badge {
+          margin-left: 0;
+          align-self: flex-start;
+        }
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <h1>🎤 Voice Assistant</h1>
-      
-      <div class="status-bar">
-        <div class="connection-status">
-          <span>Voice Recognition:</span>
-          <div id="connection-status" class="status disconnected">🔴 Disconnected</div>
+      <!-- Header -->
+      <div class="header">
+        <div class="logo">🎤</div>
+        <div class="header-content">
+          <h1>Voice Assistant</h1>
+          <p>Advanced AI-powered automation and control</p>
         </div>
-        <div class="system-info">
-          <span>Dynamic Task Execution Ready</span>
+        <div class="status-badge">
+          <div class="status-dot"></div>
+          <span>System Ready</span>
         </div>
       </div>
 
-      <div class="controls">
-        <button id="start-recording" class="btn primary">🎤 Start Listening</button>
-        <button id="stop-recording" class="btn secondary" disabled>⏹️ Stop Listening</button>
-        <button id="test-command" class="btn success">🧪 Test YouTube</button>
-        <button id="mic-test" class="btn secondary">🔧 Test Mic</button>
-        <button id="clear-log" class="btn secondary">🗑️ Clear Log</button>
-        <button id="settings-btn" class="btn secondary">⚙️ Settings</button>
+      <!-- Main Content -->
+      <div class="main-content">
+        <!-- Voice Recognition Panel -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-icon">🎵</span>
+            <h2 class="panel-title">Voice Recognition</h2>
+          </div>
+          
+          <div class="status-list">
+            <div class="status-item">
+              <div class="status-label">
+                <span>🔗</span>
+                Connection
+              </div>
+              <div class="status-value">
+                <span id="connection-status">Connected</span>
+                <div class="indicator connected" id="connection-indicator"></div>
+              </div>
+            </div>
+            
+            <div class="status-item">
+              <div class="status-label">
+                <span>🎙️</span>
+                Recording
+              </div>
+              <div class="status-value">
+                <span id="recording-status">Ready</span>
+                <div class="indicator ready" id="recording-indicator"></div>
+              </div>
+            </div>
+            
+            <div class="status-item">
+              <div class="status-label">
+                <span>⚡</span>
+                Task Engine
+              </div>
+              <div class="status-value">
+                <span id="task-status">Ready</span>
+                <div class="indicator ready" id="task-indicator"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Controls Panel -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-icon">🎛️</span>
+            <h2 class="panel-title">Controls</h2>
+          </div>
+          
+          <div class="controls-grid">
+            <button class="control-btn danger" id="startBtn">
+              <span>🛑</span>
+              Stop Listening
+            </button>
+            
+            <button class="control-btn success" id="testYouTubeBtn">
+              <span>▶️</span>
+              Test YouTube
+            </button>
+            
+            <button class="control-btn primary" id="testMicBtn">
+              <span>🎤</span>
+              Test Microphone
+            </button>
+            
+            <button class="control-btn" id="clearLogBtn">
+              <span>🗑️</span>
+              Clear Log
+            </button>
+            
+            <button class="control-btn" id="runTestSuiteBtn">
+              <span>🧪</span>
+              Run Test Suite
+            </button>
+            
+            <button class="control-btn" id="helpBtn">
+              <span>❓</span>
+              Help & Commands
+            </button>
+            
+            <button class="control-btn wide" id="settingsBtn">
+              <span>⚙️</span>
+              Settings & Configuration
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div class="task-progress" id="task-progress">
-        <div class="transcript-label">Task Progress</div>
-        <div class="progress-bar">
-          <div class="progress-fill" id="progress-fill"></div>
+      <!-- Live Transcript Panel -->
+      <div class="transcript-panel">
+        <div class="transcript-header">
+          <div class="transcript-title">
+            <span>📜</span>
+            Live Transcript
+          </div>
+          <div class="live-badge">
+            <div class="live-dot"></div>
+            <span>Live</span>
+          </div>
         </div>
-        <div id="current-step">Ready to execute tasks...</div>
-      </div>
-
-      <div class="transcript-area">
-        <div class="transcript-label">Live Transcript</div>
-        <div id="transcript" class="current-transcript">Waiting for voice input...</div>
-      </div>
-
-      <div class="log-container" id="log-container">
-        <div class="log-entry info">
-          🚀 Voice Assistant initialized with Visual Guidance System
-        </div>
-        <div class="log-entry info">
-          📷 Screenshot-based UI automation ready
-        </div>
-        <div class="log-entry info">
-          🔧 Enhanced Deepgram connection with rate limiting
+        
+        <div class="transcript-content" id="logContainer">
+          <div class="log-entry success">
+            <div class="log-time">18:12</div>
+            <div class="log-message">✅ Voice Assistant initialized successfully</div>
+          </div>
+          <div class="log-entry info">
+            <div class="log-time">18:12</div>
+            <div class="log-message">🔗 Connected to Deepgram WebSocket</div>
+          </div>
+          <div class="log-entry primary">
+            <div class="log-time">18:12</div>
+            <div class="log-message">🎤 Audio system ready - listening for commands</div>
+          </div>
+          <div class="log-entry">
+            <div class="log-time">18:12</div>
+            <div class="log-message">System ready for voice commands...</div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 class="modal-title">⚙️ VoiceMac Settings</h2>
-          <button class="close-btn" id="close-modal">&times;</button>
-        </div>
-        
-        <div class="settings-section">
-          <label class="settings-label">🤖 AI Model Configuration</label>
-          <div class="settings-description">
-            Configure which AI models to use for different tasks. Make sure you have the required API keys in your .env file.
-          </div>
-          
-          <div class="model-config-section">
-            <div class="model-type-config">
-              <label class="model-label">Text Generation Model</label>
-              <div class="model-selection">
-                <select id="text-provider-select" class="provider-select">
-                  <option value="anthropic">Anthropic</option>
-                  <option value="groq">Groq</option>
-                  <option value="openai">OpenAI</option>
-                </select>
-                <select id="text-model-select" class="model-select">
-                  <option value="">Select a model...</option>
-                </select>
-              </div>
-            </div>
-            
-            <div class="model-type-config">
-              <label class="model-label">Image Analysis Model</label>
-              <div class="model-selection">
-                <select id="image-provider-select" class="provider-select">
-                  <option value="anthropic">Anthropic</option>
-                  <option value="groq">Groq</option>
-                  <option value="openai">OpenAI</option>
-                </select>
-                <select id="image-model-select" class="model-select">
-                  <option value="">Select a model...</option>
-                </select>
-              </div>
-            </div>
-            
-            <div class="model-actions">
-              <button class="action-btn secondary" id="test-models-btn">🧪 Test All Models</button>
-              <div id="test-results" class="test-results" style="display: none;"></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <label class="settings-label">System Prompt</label>
-          <div class="settings-description">
-            Customize how VoiceMac interprets your voice commands. This prompt defines the AI's behavior, supported actions, and response format.
-          </div>
-          <textarea 
-            id="system-prompt-textarea" 
-            class="prompt-textarea"
-            placeholder="Enter your custom system prompt here..."
-          ></textarea>
-          
-          <div class="examples-section">
-            <div class="examples-title">📋 Available Action Types & Examples</div>
-            <div class="examples-content">
-              <pre>[
-  {
-    "type": "KEYBOARD",
-    "description": "Press Cmd+Q to quit Sublime Text",
-    "script": "tell application \"System Events\" to keystroke \"q\" using command down"
-  },
-  {
-    "type": "APPLICATION",
-    "description": "Launch Google Chrome",
-    "script": "tell application \"Google Chrome\" to activate"
-  },
-  {
-    "type": "APPLICATION",
-    "description": "Quit Google Chrome",
-    "script": "tell application \"Google Chrome\" to quit"
-  },
-  {
-    "type": "FILE",
-    "description": "Open Downloads folder in Finder",
-    "script": "tell application \"Finder\" to open POSIX file \"/Users/$(whoami)/Downloads\""
-  },
-  {
-    "type": "SYSTEM",
-    "description": "Increase system volume by one step",
-    "script": "set currentVolume to output volume of (get volume settings)\nset newVolume to (currentVolume + 12)\nif newVolume > 100 then set newVolume to 100\nset volume output volume newVolume"
-  },
-  {
-    "type": "SYSTEM",
-    "description": "Mute system volume",
-    "script": "set volume with output muted"
-  },
-  {
-    "type": "MOUSE",
-    "description": "Move cursor to top-left corner of the screen",
-    "script": "tell application \"System Events\"\n  set the mousePos to {0, 0}\n  do shell script \"/usr/bin/env python3 - <<EOF\nimport objc\nfrom CoreGraphics import CGWarpMouseCursorPosition\nCGWarpMouseCursorPosition((0,0))\nEOF\"\nend tell"
-  },
-  {
-    "type": "MOUSE",
-    "description": "Click at coordinates (500, 300)",
-    "script": "tell application \"System Events\"\n  click at {500, 300}\nend tell"
-  },
-  {
-    "type": "UI_ELEMENT",
-    "description": "Click the "New Finder Window" menu item",
-    "script": "tell application \"System Events\"\n  tell process \"Finder\"\n    click menu item \"New Finder Window\" of menu \"File\" of menu bar 1\n  end tell\nend tell"
-  },
-  {
-    "type": "SYSTEM",
-    "description": "Take a screenshot of the entire screen and save to Desktop",
-    "script": "do shell script \"screencapture -x ~/Desktop/screenshot_$(date +%Y%m%d_%H%M%S).png\""
-  },
-  {
-    "type": "SYSTEM",
-    "description": "Lock the screen",
-    "script": "tell application \"System Events\" to keystroke \"q\" using {control down, command down}"
-  },
-  {
-    "type": "NOTIFICATION",
-    "description": "Show a macOS notification",
-    "script": "display notification \"Task complete!\" with title \"Voice Assistant\""
-  },
-  {
-    "type": "MEDIA",
-    "description": "Play/Pause the current media in Spotify",
-    "script": "tell application \"Spotify\" to playpause"
-  },
-  {
-    "type": "WINDOW",
-    "description": "Minimize the frontmost window",
-    "script": "tell application \"System Events\"\n  set frontApp to name of first application process whose frontmost is true\n  tell application frontApp to set miniaturized of front window to true\nend tell"
-  },
-  {
-    "type": "SYSTEM",
-    "description": "Put display to sleep",
-    "script": "tell application \"System Events\" to sleep"
-  },
-  {
-    "type": "SHELL",
-    "description": "List all running processes",
-    "script": "do shell script \"ps aux\""
-  }
-]</pre>
-            </div>
-          </div>
-        </div>
-        
-        <div class="settings-actions">
-          <button class="action-btn secondary" id="reset-prompt-btn">🔄 Reset to Default</button>
-          <button class="action-btn secondary" id="cancel-settings-btn">Cancel</button>
-          <button class="action-btn primary" id="save-settings-btn">💾 Save Changes</button>
-        </div>
-      </div>
-    </div>
-
-    <script>
-      // Add audio wave animation
-      const audioWaves = document.getElementById("audioWaves");
-      const numBars = 30; // Increased number of bars for better visualization
-
-      for (let i = 0; i < numBars; i++) {
-        const bar = document.createElement("div");
-        bar.className = "wave-bar";
-        bar.style.height = "2px";
-        audioWaves.appendChild(bar);
-      }
-
-      function updateWaveAnimation(isRecording) {
-        if (!isRecording) {
-          audioWaves.querySelectorAll(".wave-bar").forEach((bar) => {
-            bar.style.height = "2px";
-          });
-          return;
-        }
-
-        audioWaves.querySelectorAll(".wave-bar").forEach((bar) => {
-          const height = Math.random() * 30 + 5;
-          bar.style.height = `${height}px`;
-        });
-      }
-
-      // Update recording visualization
-      const micVisualization = document.getElementById("micVisualization");
-      const recordingStatus = document.getElementById("recordingStatus");
-      let isRecording = false;
-      let waveAnimationInterval;
-
-      micVisualization.addEventListener("click", () => {
-        document.getElementById("startBtn").click();
-      });
-
-      document.getElementById("startBtn").addEventListener("click", () => {
-        isRecording = !isRecording;
-        micVisualization.classList.toggle("recording", isRecording);
-        recordingStatus.classList.toggle("active", isRecording);
-
-        if (isRecording) {
-          waveAnimationInterval = setInterval(
-            () => updateWaveAnimation(true),
-            100
-          );
-        } else {
-          clearInterval(waveAnimationInterval);
-          updateWaveAnimation(false);
-        }
-      });
-    </script>
     <script src="renderer.js"></script>
   </body>
 </html>

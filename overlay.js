@@ -6,6 +6,11 @@ let isProcessing = false;
 let currentTaskSteps = 0;
 let totalTaskSteps = 0;
 
+// Multi-step task execution state
+let currentTask = null;
+let taskSteps = [];
+let activeStepIndex = -1;
+
 // History management
 const MAX_HISTORY = 5;
 let commandHistory = [];
@@ -88,26 +93,62 @@ function updateHistoryDisplay() {
   if (!transcriptText) return;
   
   if (commandHistory.length === 0) {
-    transcriptText.innerHTML = '<div class="history-empty">No recent commands</div>';
+    transcriptText.innerHTML = `
+      <div class="history-empty">
+        <div class="history-empty-icon">🎤</div>
+        <div class="history-empty-text">No recent commands</div>
+        <div class="history-empty-subtitle">Start speaking to see your voice commands here</div>
+      </div>
+    `;
     return;
   }
   
   const historyHTML = commandHistory.map(entry => {
     const timeAgo = getTimeAgo(new Date(entry.timestamp));
-    const statusIcon = entry.status === 'success' ? '✅' : 
-                      entry.status === 'error' ? '❌' : 
-                      entry.status === 'pending' ? '⏳' : 
-                      entry.status === 'cancelled' ? '🚫' : '🔄';
-    const typeIcon = entry.type === 'manual' ? '⌨️' : '🎤';
+    
+    // More descriptive status indicators
+    let statusIcon, statusText, statusClass;
+    switch(entry.status) {
+      case 'success':
+        statusIcon = '✅';
+        statusText = 'Completed';
+        statusClass = 'status-completed';
+        break;
+      case 'error':
+        statusIcon = '❌';
+        statusText = 'Failed';
+        statusClass = 'status-failed';
+        break;
+      case 'pending':
+        statusIcon = '⏳';
+        statusText = 'Processing';
+        statusClass = 'status-processing';
+        break;
+      case 'cancelled':
+        statusIcon = '🚫';
+        statusText = 'Cancelled';
+        statusClass = 'status-cancelled';
+        break;
+      default:
+        statusIcon = '🔄';
+        statusText = 'Running';
+        statusClass = 'status-running';
+    }
+    
+    const typeIcon = entry.type === 'manual' ? '💬' : '🎤';
     
     return `
       <div class="history-entry ${entry.status}">
         <div class="history-header">
           <span class="history-type">${typeIcon}</span>
-          <span class="history-status">${statusIcon}</span>
+          <div class="history-status ${statusClass}">
+            <span class="status-icon">${statusIcon}</span>
+            <span class="status-text">${statusText}</span>
+          </div>
           <span class="history-time">${timeAgo}</span>
         </div>
         <div class="history-command">${entry.command}</div>
+        ${entry.result ? `<div class="history-result">${entry.result}</div>` : ''}
       </div>
     `;
   }).join('');
@@ -489,6 +530,15 @@ ipcRenderer.on("command-processing", (event, command) => {
   
   // Add to history as pending
   currentCommandId = addToHistory(command, 'voice', 'pending');
+  
+  // Start multi-step task display for complex commands
+  if (isComplexCommand(command)) {
+    const steps = generateStepsForCommand(command);
+    startMultiStepTask(command, steps);
+    
+    // Start auto-progression as fallback if detailed events don't come
+    startAutoProgression(steps.length);
+  }
 });
 
 ipcRenderer.on("command-success", (event, command) => {
@@ -498,6 +548,11 @@ ipcRenderer.on("command-success", (event, command) => {
   // Update history status
   if (currentCommandId) {
     updateHistoryStatus(currentCommandId, 'success');
+  }
+  
+  // Complete multi-step task if active
+  if (currentTask) {
+    completeMultiStepTask(true);
   }
   
   // Clear after 3 seconds and reset for next command
@@ -559,6 +614,18 @@ ipcRenderer.on("task-step-complete", (event, data) => {
   const { stepNumber, totalSteps, description } = data;
   currentTaskSteps = stepNumber;
   totalTaskSteps = totalSteps;
+  
+  // Update multi-step task display if active
+  if (currentTask && stepNumber <= taskSteps.length) {
+    // Mark previous step as completed
+    if (stepNumber > 1) {
+      updateStepStatus(stepNumber - 2, 'completed');
+    }
+    // Mark current step as active
+    if (stepNumber <= taskSteps.length) {
+      updateStepStatus(stepNumber - 1, 'active');
+    }
+  }
   
   updateStatusMessage(`📋 Step ${stepNumber}/${totalSteps}: ${description.substring(0, 40)}...`, 'processing');
   updateStatus('processing');
@@ -662,6 +729,11 @@ ipcRenderer.on("task-complete", (event, data) => {
   // Update history status
   if (currentCommandId) {
     updateHistoryStatus(currentCommandId, success ? 'success' : 'error', message);
+  }
+  
+  // Complete multi-step task if active
+  if (currentTask) {
+    completeMultiStepTask(success);
   }
   
   if (success) {
@@ -834,6 +906,347 @@ function updateTranscript(text) {
   transcriptText.textContent = text;
 }
 
+// Multi-step Task Execution Functions
+function startMultiStepTask(command, steps) {
+  currentTask = {
+    command: command,
+    steps: steps,
+    startTime: Date.now()
+  };
+  
+  taskSteps = steps.map((step, index) => ({
+    id: index,
+    description: step.description || step,
+    status: 'pending',
+    completed: false,
+    failed: false
+  }));
+  
+  activeStepIndex = -1;
+  
+  // Update UI
+  const taskCommandEl = document.getElementById('taskCommand');
+  const taskPanel = document.getElementById('taskExecutionPanel');
+  
+  if (taskCommandEl) {
+    taskCommandEl.textContent = command;
+  }
+  
+  renderTaskSteps();
+  showTaskPanel();
+  
+  // Auto-hide transcript area when task panel is active
+  const transcriptArea = document.getElementById('transcriptArea');
+  if (transcriptArea) {
+    transcriptArea.style.opacity = '0.3';
+  }
+}
+
+function renderTaskSteps() {
+  const taskStepsContainer = document.getElementById('taskSteps');
+  if (!taskStepsContainer) return;
+  
+  taskStepsContainer.innerHTML = '';
+  
+  taskSteps.forEach((step, index) => {
+    const stepElement = document.createElement('div');
+    stepElement.className = `task-step ${step.status}`;
+    stepElement.id = `task-step-${index}`;
+    
+    // Determine icon content
+    let iconContent = index + 1;
+    if (step.status === 'completed') iconContent = '✓';
+    if (step.status === 'failed') iconContent = '✗';
+    if (step.status === 'active') iconContent = '⟳';
+    
+    // Determine status text
+    let statusText = step.status.charAt(0).toUpperCase() + step.status.slice(1);
+    if (step.status === 'active') statusText = 'Running';
+    
+    stepElement.innerHTML = `
+      <div class="step-icon ${step.status}">${iconContent}</div>
+      <div class="step-description">${step.description}</div>
+      <div class="step-status ${step.status}">${statusText}</div>
+    `;
+    
+    taskStepsContainer.appendChild(stepElement);
+  });
+}
+
+function updateStepStatus(stepIndex, status) {
+  if (stepIndex < 0 || stepIndex >= taskSteps.length) return;
+  
+  // Update previous step to completed if moving to next
+  if (status === 'active' && activeStepIndex >= 0) {
+    taskSteps[activeStepIndex].status = 'completed';
+    taskSteps[activeStepIndex].completed = true;
+  }
+  
+  // Update current step
+  taskSteps[stepIndex].status = status;
+  
+  if (status === 'active') {
+    activeStepIndex = stepIndex;
+  } else if (status === 'completed') {
+    taskSteps[stepIndex].completed = true;
+    if (stepIndex === activeStepIndex) {
+      activeStepIndex = -1;
+    }
+  } else if (status === 'failed') {
+    taskSteps[stepIndex].failed = true;
+    activeStepIndex = -1;
+  }
+  
+  renderTaskSteps();
+  
+  // Auto-scroll to active step
+  const activeStepEl = document.getElementById(`task-step-${stepIndex}`);
+  if (activeStepEl) {
+    activeStepEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function completeMultiStepTask(success = true) {
+  // Stop auto-progression
+  stopAutoProgression();
+  
+  if (activeStepIndex >= 0) {
+    updateStepStatus(activeStepIndex, success ? 'completed' : 'failed');
+  }
+  
+  // Mark all remaining steps as completed if successful
+  if (success) {
+    taskSteps.forEach((step, index) => {
+      if (step.status === 'pending' || step.status === 'active') {
+        step.status = 'completed';
+        step.completed = true;
+      }
+    });
+    renderTaskSteps();
+  }
+  
+  // Auto-hide panel after completion
+  setTimeout(() => {
+    hideTaskPanel();
+  }, success ? 3000 : 5000); // Show longer for failures
+}
+
+function showTaskPanel() {
+  const taskPanel = document.getElementById('taskExecutionPanel');
+  if (taskPanel) {
+    taskPanel.classList.add('active');
+    
+    // Adjust status area position
+    const statusArea = document.getElementById('statusArea');
+    if (statusArea) {
+      statusArea.style.bottom = '320px'; // Move up when task panel is visible
+    }
+  }
+}
+
+function hideTaskPanel() {
+  // Stop auto-progression
+  stopAutoProgression();
+  
+  const taskPanel = document.getElementById('taskExecutionPanel');
+  const transcriptArea = document.getElementById('transcriptArea');
+  const statusArea = document.getElementById('statusArea');
+  
+  if (taskPanel) {
+    taskPanel.classList.remove('active');
+  }
+  
+  if (transcriptArea) {
+    transcriptArea.style.opacity = '1';
+  }
+  
+  if (statusArea) {
+    statusArea.style.bottom = '84px'; // Reset to original position
+  }
+  
+  // Reset task state
+  currentTask = null;
+  taskSteps = [];
+  activeStepIndex = -1;
+}
+
+// Auto-progression fallback system
+let autoProgressionTimer = null;
+let autoProgressionStep = 0;
+
+function startAutoProgression(totalSteps) {
+  // Clear any existing timer
+  if (autoProgressionTimer) {
+    clearInterval(autoProgressionTimer);
+  }
+  
+  autoProgressionStep = 0;
+  
+  // Start the first step immediately
+  setTimeout(() => {
+    if (currentTask && autoProgressionStep < totalSteps) {
+      updateStepStatus(autoProgressionStep, 'active');
+      autoProgressionStep++;
+    }
+  }, 1000);
+  
+  // Continue progressing steps every 3 seconds
+  autoProgressionTimer = setInterval(() => {
+    if (!currentTask) {
+      clearInterval(autoProgressionTimer);
+      return;
+    }
+    
+    if (autoProgressionStep <= totalSteps) {
+      // Complete previous step
+      if (autoProgressionStep > 0) {
+        updateStepStatus(autoProgressionStep - 1, 'completed');
+      }
+      
+      // Start next step if available
+      if (autoProgressionStep < totalSteps) {
+        updateStepStatus(autoProgressionStep, 'active');
+        autoProgressionStep++;
+      } else {
+        // All steps completed
+        clearInterval(autoProgressionTimer);
+      }
+    }
+  }, 3000); // Progress every 3 seconds
+}
+
+function stopAutoProgression() {
+  if (autoProgressionTimer) {
+    clearInterval(autoProgressionTimer);
+    autoProgressionTimer = null;
+  }
+  autoProgressionStep = 0;
+}
+
+// Helper function to determine if a command needs multi-step display
+function isComplexCommand(command) {
+  const complexKeywords = [
+    'open', 'launch', 'start', 'play', 'create', 'send', 'email', 
+    'search', 'find', 'navigate', 'browse', 'download', 'install',
+    'reminder', 'note', 'calendar', 'schedule', 'youtube', 'google',
+    'website', 'application', 'browser', 'document', 'file'
+  ];
+  
+  const lowerCommand = command.toLowerCase();
+  return complexKeywords.some(keyword => lowerCommand.includes(keyword)) || 
+         command.split(' ').length > 3; // Complex if more than 3 words
+}
+
+// Generate steps for common commands
+function generateStepsForCommand(command) {
+  const lowerCommand = command.toLowerCase();
+  
+  // YouTube-related commands
+  if (lowerCommand.includes('youtube') || (lowerCommand.includes('play') && lowerCommand.includes('video'))) {
+    return [
+      "Open web browser",
+      "Navigate to YouTube",
+      "Search for the requested video",
+      "Select the appropriate video",
+      "Start playback"
+    ];
+  }
+  
+  // Reminder/Note commands
+  if (lowerCommand.includes('reminder') || lowerCommand.includes('note')) {
+    return [
+      "Open Reminders app",
+      "Create new reminder",
+      "Set reminder text",
+      "Configure timing",
+      "Save reminder"
+    ];
+  }
+  
+  // Email commands
+  if (lowerCommand.includes('email') || lowerCommand.includes('send')) {
+    return [
+      "Open Mail app",
+      "Create new email",
+      "Set recipient",
+      "Write message content",
+      "Send email"
+    ];
+  }
+  
+  // Browser/Website commands
+  if (lowerCommand.includes('open') && (lowerCommand.includes('website') || lowerCommand.includes('browser'))) {
+    return [
+      "Launch web browser",
+      "Enter website URL",
+      "Navigate to page",
+      "Wait for page load"
+    ];
+  }
+  
+  // System commands (brightness, volume, etc.)
+  if (lowerCommand.includes('brightness') || lowerCommand.includes('volume') || lowerCommand.includes('screen')) {
+    return [
+      "Access system preferences",
+      "Locate display/sound settings",
+      "Adjust the requested setting",
+      "Apply changes"
+    ];
+  }
+  
+  // File/Application commands
+  if (lowerCommand.includes('open') || lowerCommand.includes('launch') || lowerCommand.includes('start')) {
+    return [
+      "Locate the application",
+      "Launch the application",
+      "Wait for app to load",
+      "Perform requested action"
+    ];
+  }
+  
+  // Generic fallback for complex commands
+  return [
+    "Analyze the command",
+    "Execute the primary action",
+    "Verify completion",
+    "Provide feedback"
+  ];
+}
+
+// Demo function to show multi-step task (for testing)
+function demoMultiStepTask() {
+  const steps = [
+    "Open browser",
+    "Click in the address bar and type youtube.com and press enter", 
+    "Search for 'coldplay paradise'",
+    "Click on first video",
+    "Click play button"
+  ];
+  
+  startMultiStepTask("play coldplay paradise on youtube", steps);
+  
+  // Simulate step execution
+  let currentStep = 0;
+  const executeNextStep = () => {
+    if (currentStep < steps.length) {
+      updateStepStatus(currentStep, 'active');
+      
+      setTimeout(() => {
+        updateStepStatus(currentStep, 'completed');
+        currentStep++;
+        
+        if (currentStep < steps.length) {
+          setTimeout(executeNextStep, 800);
+        } else {
+          completeMultiStepTask(true);
+        }
+      }, 2000);
+    }
+  };
+  
+  setTimeout(executeNextStep, 1000);
+}
+
 // Initialize overlay
 document.addEventListener("DOMContentLoaded", () => {
   // Load history from localStorage
@@ -890,5 +1303,19 @@ document.addEventListener("DOMContentLoaded", () => {
     sendButton.addEventListener('click', handleManualCommand);
   }
   
-  console.log("Overlay widget initialized with manual input support");
+  // Set up task panel close button
+  const taskCloseBtn = document.getElementById('taskCloseBtn');
+  if (taskCloseBtn) {
+    taskCloseBtn.addEventListener('click', hideTaskPanel);
+  }
+  
+  // Add keyboard shortcut for demo (Ctrl+D)
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key === 'd') {
+      e.preventDefault();
+      demoMultiStepTask();
+    }
+  });
+  
+  console.log("Overlay widget initialized with multi-step task support");
 }); 

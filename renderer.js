@@ -5,11 +5,22 @@ const { ipcRenderer } = require("electron");
 document.addEventListener("DOMContentLoaded", () => {
   // DOM elements - updated to match the new HTML IDs
   const transcriptEl = document.getElementById("transcript");
-  const startBtn = document.getElementById("start-recording");
-  const stopBtn = document.getElementById("stop-recording");
-  const testBtn = document.getElementById("test-command");
-  const clearBtn = document.getElementById("clear-log");
-  const logContainer = document.getElementById("log-container");
+  const startBtn = document.getElementById("startBtn");
+  const testYouTubeBtn = document.getElementById("testYouTubeBtn");
+  const testMicBtn = document.getElementById("testMicBtn");
+  const clearLogBtn = document.getElementById("clearLogBtn");
+  const settingsBtn = document.getElementById("settingsBtn");
+  const runTestSuiteBtn = document.getElementById("runTestSuiteBtn");
+  const helpBtn = document.getElementById("helpBtn");
+  const logContainer = document.getElementById("logContainer");
+  
+  // Status elements
+  const connectionStatus = document.getElementById("connection-status");
+  const recordingStatus = document.getElementById("recording-status");
+  const taskStatus = document.getElementById("task-status");
+  const connectionIndicator = document.getElementById("connection-indicator");
+  const recordingIndicator = document.getElementById("recording-indicator");
+  const taskIndicator = document.getElementById("task-indicator");
 
   let isRecording = false;
   let currentTranscript = ""; // Current command being built
@@ -27,28 +38,445 @@ document.addEventListener("DOMContentLoaded", () => {
   let isProcessingCommand = false;
   let heartbeatInterval = null; // Add heartbeat interval
 
-  // Add event listeners for new buttons
-  testBtn.addEventListener("click", async () => {
-    addLogEntry("🧪 Testing YouTube command...");
-    const success = await executeCommand("play porcupine tree songs on youtube");
-    if (success) {
-      addLogEntry("✅ Test command completed!", "success");
-    } else {
-      addLogEntry("❌ Test command failed", "error");
-    }
-  });
+  // Initialize the interface
+  initializeInterface();
 
-  clearBtn.addEventListener("click", () => {
-    logContainer.innerHTML = `
-      <div class="log-entry info">🚀 Voice Assistant ready with Visual Guidance System</div>
-      <div class="log-entry info">📷 Screenshot-based UI automation ready</div>
-      <div class="log-entry info">🔧 Enhanced Deepgram connection with rate limiting</div>
+  function initializeInterface() {
+    // Set initial status
+    updateConnectionStatus("Ready");
+    updateRecordingStatus("Ready");
+    updateTaskStatus("Ready");
+    
+    // Add initial log entries
+    addLogEntry("✅ Voice Assistant initialized successfully", "success");
+    addLogEntry("🔗 Connecting to Deepgram WebSocket...", "info");
+    addLogEntry("🎤 Audio system ready - listening for commands", "primary");
+    addLogEntry("System ready for voice commands...", "");
+    
+    // Setup event listeners
+    setupEventListeners();
+    
+    // Auto-start recording
+    setTimeout(() => {
+      startRecording();
+    }, 1000);
+  }
+
+  // Setup all event listeners
+  function setupEventListeners() {
+    console.log("🔧 Setting up event listeners...");
+    
+    // Debug: Check if elements exist
+    console.log("Elements found:", {
+      startBtn: !!startBtn,
+      testYouTubeBtn: !!testYouTubeBtn,
+      testMicBtn: !!testMicBtn,
+      clearLogBtn: !!clearLogBtn,
+      settingsBtn: !!settingsBtn,
+      runTestSuiteBtn: !!runTestSuiteBtn,
+      helpBtn: !!helpBtn
+    });
+
+    if (startBtn) {
+      console.log("✅ Attaching start button listener");
+      startBtn.addEventListener("click", (e) => {
+        console.log("🎤 Start button clicked!");
+        e.preventDefault();
+        toggleRecording();
+      });
+    } else {
+      console.log("❌ Start button not found!");
+    }
+
+    if (testYouTubeBtn) {
+      console.log("✅ Attaching YouTube test button listener");
+      testYouTubeBtn.addEventListener("click", async (e) => {
+        console.log("▶️ YouTube test button clicked!");
+        e.preventDefault();
+        addLogEntry("🧪 Testing YouTube command...", "info");
+        updateTaskStatus("Testing");
+        updateTaskIndicator("processing");
+        
+        try {
+          const success = await executeCommand("play porcupine tree songs on youtube");
+          if (success) {
+            addLogEntry("✅ YouTube test completed successfully!", "success");
+            updateTaskStatus("Completed");
+            updateTaskIndicator("connected");
+          } else {
+            addLogEntry("❌ YouTube test failed", "error");
+            updateTaskStatus("Failed");
+            updateTaskIndicator("disconnected");
+          }
+        } catch (error) {
+          addLogEntry("❌ YouTube test error: " + error.message, "error");
+          updateTaskStatus("Error");
+          updateTaskIndicator("disconnected");
+        }
+        
+        // Reset status after 3 seconds
+        setTimeout(() => {
+          updateTaskStatus("Ready");
+          updateTaskIndicator("ready");
+        }, 3000);
+      });
+    } else {
+      console.log("❌ YouTube test button not found!");
+    }
+
+        if (testMicBtn) {
+      console.log("✅ Attaching microphone test button listener");
+      testMicBtn.addEventListener("click", async (e) => {
+        console.log("🎤 Microphone test button clicked!");
+        e.preventDefault();
+        addLogEntry("🎤 Testing microphone...", "info");
+        updateRecordingStatus("Testing");
+        updateRecordingIndicator("processing");
+        
+        try {
+          // Test microphone access
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          addLogEntry("✅ Microphone access granted", "success");
+          
+          // Test audio levels for 3 seconds
+          const audioContext = new AudioContext();
+          const source = audioContext.createMediaStreamSource(stream);
+          const analyser = audioContext.createAnalyser();
+          source.connect(analyser);
+          
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          let testCount = 0;
+          const maxTests = 30; // 3 seconds at ~100ms intervals
+          
+          const testInterval = setInterval(() => {
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            
+            if (average > 10) {
+              addLogEntry(`🔊 Audio detected (level: ${Math.round(average)})`, "success");
+            }
+            
+            testCount++;
+            if (testCount >= maxTests) {
+              clearInterval(testInterval);
+              stream.getTracks().forEach(track => track.stop());
+              audioContext.close();
+              
+              addLogEntry("✅ Microphone test completed", "success");
+              updateRecordingStatus("Ready");
+              updateRecordingIndicator("ready");
+            }
+          }, 100);
+          
+        } catch (error) {
+          addLogEntry("❌ Microphone test failed: " + error.message, "error");
+          updateRecordingStatus("Error");
+          updateRecordingIndicator("disconnected");
+          
+          // Reset status after 3 seconds
+          setTimeout(() => {
+            updateRecordingStatus("Ready");
+            updateRecordingIndicator("ready");
+          }, 3000);
+        }
+      });
+    } else {
+      console.log("❌ Microphone test button not found!");
+    }
+
+  if (testMicBtn) {
+    testMicBtn.addEventListener("click", async () => {
+      addLogEntry("🎤 Testing microphone...", "info");
+      updateRecordingStatus("Testing");
+      updateRecordingIndicator("processing");
+      
+      try {
+        // Test microphone access
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        addLogEntry("✅ Microphone access granted", "success");
+        
+        // Test audio levels for 3 seconds
+        const audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(stream);
+        const analyser = audioContext.createAnalyser();
+        source.connect(analyser);
+        
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        let testCount = 0;
+        const maxTests = 30; // 3 seconds at ~100ms intervals
+        
+        const testInterval = setInterval(() => {
+          analyser.getByteFrequencyData(dataArray);
+          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          
+          if (average > 10) {
+            addLogEntry(`🔊 Audio detected (level: ${Math.round(average)})`, "success");
+          }
+          
+          testCount++;
+          if (testCount >= maxTests) {
+            clearInterval(testInterval);
+            stream.getTracks().forEach(track => track.stop());
+            audioContext.close();
+            
+            addLogEntry("✅ Microphone test completed", "success");
+            updateRecordingStatus("Ready");
+            updateRecordingIndicator("ready");
+          }
+        }, 100);
+        
+      } catch (error) {
+        addLogEntry("❌ Microphone test failed: " + error.message, "error");
+        updateRecordingStatus("Error");
+        updateRecordingIndicator("disconnected");
+        
+        // Reset status after 3 seconds
+        setTimeout(() => {
+          updateRecordingStatus("Ready");
+          updateRecordingIndicator("ready");
+        }, 3000);
+      }
+    });
+  } else {
+    console.log("❌ Microphone test button not found!");
+  }
+
+  if (clearLogBtn) {
+    console.log("✅ Attaching clear log button listener");
+    clearLogBtn.addEventListener("click", () => {
+      logContainer.innerHTML = '';
+      addLogEntry("🗑️ Log cleared", "info");
+      addLogEntry("✅ Voice Assistant ready", "success");
+      addLogEntry("🎤 Listening for commands...", "primary");
+    });
+  }
+
+  if (settingsBtn) {
+    console.log("✅ Attaching settings button listener");
+    settingsBtn.addEventListener("click", () => {
+      console.log("⚙️ Settings button clicked!");
+      addLogEntry("⚙️ Opening settings...", "info");
+      // You can implement a settings modal here
+      alert("Settings panel coming soon! Current features:\n\n• Voice Recognition: Deepgram API\n• AI Processing: Multiple providers\n• Task Automation: AppleScript & Shell\n• Visual Guidance: Screenshot analysis");
+    });
+  } else {
+    console.log("❌ Settings button not found!");
+  }
+
+  if (runTestSuiteBtn) {
+    console.log("✅ Attaching test suite button listener");
+    runTestSuiteBtn.addEventListener("click", async (e) => {
+      console.log("🧪 Test suite button clicked!");
+      e.preventDefault();
+      addLogEntry("🧪 Starting comprehensive test suite...", "info");
+      updateTaskStatus("Testing");
+      updateTaskIndicator("processing");
+      
+      try {
+        const result = await ipcRenderer.invoke('run-comprehensive-tests');
+        if (result.success) {
+          addLogEntry("✅ Test suite completed successfully!", "success");
+          updateTaskStatus("Completed");
+          updateTaskIndicator("connected");
+        } else {
+          addLogEntry("❌ Test suite failed: " + result.error, "error");
+          updateTaskStatus("Failed");
+          updateTaskIndicator("disconnected");
+        }
+      } catch (error) {
+        addLogEntry("❌ Test suite error: " + error.message, "error");
+        updateTaskStatus("Error");
+        updateTaskIndicator("disconnected");
+      }
+      
+      // Reset status after 3 seconds
+      setTimeout(() => {
+        updateTaskStatus("Ready");
+        updateTaskIndicator("ready");
+      }, 3000);
+    });
+  } else {
+    console.log("❌ Test suite button not found!");
+  }
+
+  if (helpBtn) {
+    console.log("✅ Attaching help button listener");
+    helpBtn.addEventListener("click", (e) => {
+      console.log("❓ Help button clicked!");
+      e.preventDefault();
+      showHelpModal();
+    });
+  } else {
+    console.log("❌ Help button not found!");
+  }
+  
+  console.log("✅ All event listeners attached!");
+}
+
+  // Help Modal Function
+  function showHelpModal() {
+    const helpModal = document.createElement('div');
+    helpModal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
+    helpModal.innerHTML = `
+      <div class="bg-gray-900 rounded-2xl p-6 max-w-4xl w-full max-h-screen overflow-y-auto m-4">
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-2xl font-bold text-white">VoiceMac Help & Commands</h2>
+          <button id="close-help-modal" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        
+        <div class="grid md:grid-cols-2 gap-6">
+          <div>
+            <h3 class="text-lg font-semibold text-white mb-4">Application Control</h3>
+            <div class="space-y-2 mb-6">
+              <div class="bg-gray-800 rounded p-3">
+                <div class="font-mono text-green-400 text-sm">"open notes"</div>
+                <div class="text-gray-300 text-xs">Launch any application</div>
+              </div>
+              <div class="bg-gray-800 rounded p-3">
+                <div class="font-mono text-green-400 text-sm">"quit safari"</div>
+                <div class="text-gray-300 text-xs">Close any application</div>
+              </div>
+              <div class="bg-gray-800 rounded p-3">
+                <div class="font-mono text-green-400 text-sm">"switch to finder"</div>
+                <div class="text-gray-300 text-xs">Switch to running app</div>
+              </div>
+            </div>
+            
+            <h3 class="text-lg font-semibold text-white mb-4">System Control</h3>
+            <div class="space-y-2">
+              <div class="bg-gray-800 rounded p-3">
+                <div class="font-mono text-green-400 text-sm">"take screenshot"</div>
+                <div class="text-gray-300 text-xs">Capture your screen</div>
+              </div>
+              <div class="bg-gray-800 rounded p-3">
+                <div class="font-mono text-green-400 text-sm">"lock screen"</div>
+                <div class="text-gray-300 text-xs">Lock your Mac</div>
+              </div>
+              <div class="bg-gray-800 rounded p-3">
+                <div class="font-mono text-green-400 text-sm">"volume up"</div>
+                <div class="text-gray-300 text-xs">Control system volume</div>
+              </div>
+            </div>
+          </div>
+          
+          <div>
+            <h3 class="text-lg font-semibold text-white mb-4">Web Automation</h3>
+            <div class="space-y-2 mb-6">
+              <div class="bg-gray-800 rounded p-3">
+                <div class="font-mono text-green-400 text-sm">"search for cats on youtube"</div>
+                <div class="text-gray-300 text-xs">Search and play YouTube videos</div>
+              </div>
+              <div class="bg-gray-800 rounded p-3">
+                <div class="font-mono text-green-400 text-sm">"search for weather"</div>
+                <div class="text-gray-300 text-xs">Google search for anything</div>
+              </div>
+              <div class="bg-gray-800 rounded p-3">
+                <div class="font-mono text-green-400 text-sm">"open reddit.com"</div>
+                <div class="text-gray-300 text-xs">Navigate to any website</div>
+              </div>
+            </div>
+            
+            <h3 class="text-lg font-semibold text-white mb-4">File Operations</h3>
+            <div class="space-y-2">
+              <div class="bg-gray-800 rounded p-3">
+                <div class="font-mono text-green-400 text-sm">"open downloads"</div>
+                <div class="text-gray-300 text-xs">Open Downloads folder</div>
+              </div>
+              <div class="bg-gray-800 rounded p-3">
+                <div class="font-mono text-green-400 text-sm">"create folder"</div>
+                <div class="text-gray-300 text-xs">Create new folder on desktop</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="mt-6 p-4 bg-blue-900 bg-opacity-50 rounded-lg">
+          <h4 class="text-white font-semibold mb-2">💡 Tips for Best Results</h4>
+          <ul class="text-blue-200 text-sm space-y-1">
+            <li>• Speak clearly and naturally</li>
+            <li>• Wait for 3 seconds of silence after each command</li>
+            <li>• Use specific app names (e.g., "Safari" not "browser")</li>
+            <li>• Commands work even when app is minimized</li>
+          </ul>
+        </div>
+      </div>
     `;
-    addLogEntry("🗑️ Log cleared");
-  });
+    
+    document.body.appendChild(helpModal);
+    
+    // Close modal event
+    document.getElementById('close-help-modal').addEventListener('click', () => {
+      document.body.removeChild(helpModal);
+    });
+    
+    // Close on background click
+    helpModal.addEventListener('click', (e) => {
+      if (e.target === helpModal) {
+        document.body.removeChild(helpModal);
+      }
+    });
+  }
+
+  // Toggle recording function
+  async function toggleRecording() {
+    if (isRecording) {
+      await stopRecording();
+    } else {
+      await startRecording();
+    }
+  }
+
+  // Update status functions
+  function updateConnectionStatus(status) {
+    if (connectionStatus) {
+      connectionStatus.textContent = status;
+    }
+  }
+
+  function updateRecordingStatus(status) {
+    if (recordingStatus) {
+      recordingStatus.textContent = status;
+    }
+  }
+
+  function updateTaskStatus(status) {
+    if (taskStatus) {
+      taskStatus.textContent = status;
+    }
+  }
+
+  function updateConnectionIndicator(type) {
+    if (connectionIndicator) {
+      connectionIndicator.className = `indicator ${type}`;
+    }
+  }
+
+  function updateRecordingIndicator(type) {
+    if (recordingIndicator) {
+      recordingIndicator.className = `indicator ${type}`;
+    }
+  }
+
+  function updateTaskIndicator(type) {
+    if (taskIndicator) {
+      taskIndicator.className = `indicator ${type}`;
+    }
+  }
+
+  // Update button states
+  function updateButtonStates() {
+    if (startBtn) {
+      if (isRecording) {
+        startBtn.innerHTML = '<span>🛑</span>Stop Listening';
+        startBtn.className = 'control-btn danger';
+      } else {
+        startBtn.innerHTML = '<span>🎤</span>Start Listening';
+        startBtn.className = 'control-btn success';
+      }
+    }
+  }
 
   // Settings modal functionality
-  const settingsBtn = document.getElementById("settings-btn");
   const settingsModal = document.getElementById("settings-modal");
   const closeModalBtn = document.getElementById("close-modal");
   const systemPromptTextarea = document.getElementById("system-prompt-textarea");
@@ -984,8 +1412,13 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       if (success) {
         isRecording = true;
         isProcessingCommand = false;
-        startBtn.textContent = "⏹️ Stop Listening";
-        addLogEntry("✅ Continuous recording started - speak naturally with pauses!");
+        updateButtonStates();
+        updateRecordingStatus("Recording");
+        updateRecordingIndicator("processing");
+        updateConnectionStatus("Connected");
+        updateConnectionIndicator("connected");
+        
+        addLogEntry("✅ Continuous recording started - speak naturally with pauses!", "success");
         console.log("✅ Continuous recording active - speak with natural pauses...");
         
         // Clear any previous transcript and timers
@@ -1075,8 +1508,9 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
     try {
       isRecording = false;
       isProcessingCommand = false;
-      startBtn.textContent = "🎤 Start Listening";
-      startBtn.disabled = false;
+      updateButtonStates();
+      updateRecordingStatus("Stopped");
+      updateRecordingIndicator("ready");
 
       // Clear any pending timers
       if (silenceTimer) {
@@ -1109,7 +1543,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
         audioContext = null;
       }
 
-      addLogEntry("🛑 Continuous recording stopped");
+      addLogEntry("🛑 Continuous recording stopped", "info");
     } catch (error) {
       console.error("Error stopping recording:", error);
       addLogEntry(`❌ Error stopping recording: ${error.message}`, "error");
@@ -1118,9 +1552,28 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
 
   // Helper function to add log entries
   function addLogEntry(message, type = "") {
+    if (!logContainer) return;
+    
     const entry = document.createElement("div");
     entry.className = `log-entry${type ? " " + type : ""}`;
-    entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    
+    // Create time element
+    const timeElement = document.createElement("div");
+    timeElement.className = "log-time";
+    timeElement.textContent = new Date().toLocaleTimeString('en-US', { 
+      hour12: false, 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    
+    // Create message element
+    const messageElement = document.createElement("div");
+    messageElement.className = "log-message";
+    messageElement.textContent = message;
+    
+    entry.appendChild(timeElement);
+    entry.appendChild(messageElement);
+    
     logContainer.appendChild(entry);
     logContainer.scrollTop = logContainer.scrollHeight;
   }

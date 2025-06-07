@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, systemPreferences } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const WebSocket = require("ws");
@@ -7,6 +7,7 @@ const AIService = require("./ai-service");
 const TaskOrchestrator = require("./task-orchestrator");
 const AtomicScriptGenerator = require("./atomic-script-generator");
 const VisualGuidance = require("./visual-guidance");
+const ComprehensiveTestSuite = require("./comprehensive-test-suite");
 require("dotenv").config();
 
 // Helper function to load saved system prompt
@@ -37,13 +38,16 @@ function saveSystemPrompt(prompt) {
 
 let mainWindow;
 let overlayWindow;
+let onboardingWindow;
 let deepgramSocket;
 let aiService;
 let taskOrchestrator;
 let atomicScriptGenerator;
 let visualGuidance;
+let comprehensiveTestSuite;
 let tray = null;
 let lastAudioSentTime = Date.now();
+let userPreferences = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -179,14 +183,23 @@ function createOverlayWindow() {
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height } = primaryDisplay.workAreaSize;
+  
+  // Calculate safe positioning with proper margins
+  const overlayWidth = 380;
+  const overlayHeight = 400; // Use a mid-range height for initial positioning
+  const margin = 30; // Increased margin for better spacing
+  
+  // Position overlay in top-right corner with safe margins (moved higher up)
+  const safeX = Math.max(margin, width - overlayWidth - margin);
+  const safeY = Math.max(margin, 100); // Positioned much higher up on screen
 
   overlayWindow = new BrowserWindow({
-    width: 380,
-    height: 240,
+    width: overlayWidth,
+    height: 240, // Start with minimum height
     minHeight: 240,
     maxHeight: 600,
-    x: Math.max(20, Math.min(width - 380, width - 400)), // Right side, but ensure it fits
-    y: Math.max(20, height - 280), // Bottom area with padding
+    x: safeX,
+    y: safeY,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -326,12 +339,18 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
-  createWindow();
-  createOverlayWindow();
-  createTray();
+  // Check if onboarding is completed
+  if (shouldShowOnboarding()) {
+    createOnboardingWindow();
+  } else {
+    startMainApp();
+  }
+  
+  // Initialize test suite
+  comprehensiveTestSuite = new ComprehensiveTestSuite();
   
   // Prevent app suspension
-  app.setName('Voice Command Assistant');
+  app.setName('VoiceMac Assistant');
   
   // Keep the app running in background
   if (process.platform === 'darwin') {
@@ -350,8 +369,12 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  } else {
+    if (shouldShowOnboarding()) {
+      createOnboardingWindow();
+    } else {
+      createWindow();
+    }
+  } else if (mainWindow) {
     mainWindow.show();
     if (process.platform === 'darwin') {
       app.dock.show();
@@ -1174,3 +1197,160 @@ function notifyCloudUpload(status, data) {
     overlayWindow.webContents.send("cloud-upload", { status, data });
   }
 }
+
+// Onboarding System Functions
+function shouldShowOnboarding() {
+  try {
+    const preferencesPath = path.join(__dirname, 'user-preferences.json');
+    if (fs.existsSync(preferencesPath)) {
+      const preferences = JSON.parse(fs.readFileSync(preferencesPath, 'utf8'));
+      return !preferences.onboardingCompleted;
+    }
+  } catch (error) {
+    console.error('Error checking onboarding status:', error);
+  }
+  return true; // Show onboarding by default
+}
+
+function createOnboardingWindow() {
+  onboardingWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+    titleBarStyle: 'hiddenInset',
+    show: true,
+    center: true
+  });
+
+  onboardingWindow.loadFile('onboarding.html');
+  
+  onboardingWindow.on('closed', () => {
+    onboardingWindow = null;
+  });
+}
+
+function startMainApp() {
+  createWindow();
+  createOverlayWindow();
+  createTray();
+  
+  // Wait a bit then start Deepgram
+  setTimeout(() => {
+    startDeepgramConnection();
+  }, 3000);
+}
+
+// IPC Handlers for Onboarding
+ipcMain.handle('check-permissions', async () => {
+  const permissions = {
+    microphone: await systemPreferences.getMediaAccessStatus('microphone') === 'granted',
+    accessibility: systemPreferences.isTrustedAccessibilityClient(false),
+    screen: await systemPreferences.getMediaAccessStatus('screen') === 'granted'
+  };
+  return permissions;
+});
+
+ipcMain.handle('request-microphone-permission', async () => {
+  try {
+    const status = await systemPreferences.askForMediaAccess('microphone');
+    return status;
+  } catch (error) {
+    console.error('Error requesting microphone permission:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('open-accessibility-settings', async () => {
+  // Open System Preferences to Accessibility
+  exec('open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"');
+  return true;
+});
+
+ipcMain.handle('open-screen-recording-settings', async () => {
+  // Open System Preferences to Screen Recording
+  exec('open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"');
+  return true;
+});
+
+ipcMain.handle('save-onboarding-preferences', async (event, preferences) => {
+  try {
+    const preferencesPath = path.join(__dirname, 'user-preferences.json');
+    fs.writeFileSync(preferencesPath, JSON.stringify(preferences, null, 2));
+    userPreferences = preferences;
+    console.log('✅ Onboarding preferences saved');
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving preferences:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('launch-main-app', async () => {
+  if (onboardingWindow) {
+    onboardingWindow.close();
+  }
+  startMainApp();
+  return true;
+});
+
+ipcMain.handle('start-tutorial-listening', async () => {
+  // Start listening for tutorial commands
+  if (deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
+    return { success: true };
+  } else {
+    await startDeepgramConnection();
+    return { success: true };
+  }
+});
+
+ipcMain.handle('execute-tutorial-command', async (event, command) => {
+  try {
+    if (taskOrchestrator) {
+      const result = await taskOrchestrator.executeTaskDirectly(command);
+      return result;
+    } else {
+      throw new Error('Task orchestrator not initialized');
+    }
+  } catch (error) {
+    console.error('Tutorial command error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Comprehensive Testing System
+ipcMain.handle('run-comprehensive-tests', async () => {
+  if (comprehensiveTestSuite) {
+    console.log('🧪 Starting comprehensive test suite...');
+    await comprehensiveTestSuite.runAllTests();
+    return { success: true, message: 'Test suite completed' };
+  }
+  return { success: false, error: 'Test suite not initialized' };
+});
+
+ipcMain.handle('run-test-category', async (event, category) => {
+  if (comprehensiveTestSuite) {
+    console.log(`🧪 Running ${category} tests...`);
+    await comprehensiveTestSuite.runCategory(category);
+    return { success: true, message: `${category} tests completed` };
+  }
+  return { success: false, error: 'Test suite not initialized' };
+});
+
+ipcMain.handle('get-test-results', async () => {
+  if (comprehensiveTestSuite) {
+    return {
+      success: true,
+      results: comprehensiveTestSuite.results,
+      summary: {
+        total: comprehensiveTestSuite.totalTests,
+        passed: comprehensiveTestSuite.passedTests.length,
+        failed: comprehensiveTestSuite.failedTests.length,
+        skipped: comprehensiveTestSuite.skippedTests.length
+      }
+    };
+  }
+  return { success: false, error: 'Test suite not initialized' };
+});
