@@ -9,6 +9,16 @@ class AtomicScriptGenerator {
 
   // Generate a single atomic script for a specific action
   async generateAtomicScript(action, context = {}) {
+    // Check if API key is available and valid
+    if (!this.apiKey || 
+        this.apiKey === 'your_anthropic_api_key_here' || 
+        this.apiKey.includes('your_') ||
+        this.apiKey.includes('_here') ||
+        this.apiKey.trim() === '') {
+      console.log("🔧 AtomicScriptGenerator: No valid API key available, using predefined scripts only");
+      return { success: false, error: "API key not configured for script generation" };
+    }
+
     const systemPrompt = `You are an expert AppleScript generator that creates SINGLE, ATOMIC scripts for specific actions. Each script should do ONE thing only.
 
 CRITICAL SYNTAX RULES:

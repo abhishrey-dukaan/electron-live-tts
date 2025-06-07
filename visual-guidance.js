@@ -106,6 +106,16 @@ class VisualGuidance {
   // Analyze screenshot and get next action
   async analyzeScreenshotForAction(screenshotPath, currentTask, stepDescription) {
     try {
+      // Check if API key is available and valid
+      if (!this.apiKey || 
+          this.apiKey === 'your_anthropic_api_key_here' || 
+          this.apiKey.includes('your_') ||
+          this.apiKey.includes('_here') ||
+          this.apiKey.trim() === '') {
+        console.log("🎯 VisualGuidance: No valid API key available, skipping visual analysis");
+        return { success: false, error: "API key not configured for visual guidance" };
+      }
+
       const base64Image = await this.screenshotToBase64(screenshotPath);
       if (!base64Image) {
         return { success: false, error: "Failed to process screenshot" };

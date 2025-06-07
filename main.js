@@ -99,7 +99,15 @@ function createWindow() {
   });
 
   // Initialize AI service and task orchestrator
-  aiService = new AIService(process.env.ANTHROPIC_API_KEY);
+  aiService = new AIService();
+  
+  // Set API keys for all providers
+  aiService.setApiKeys({
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY
+  });
+  
   taskOrchestrator = new TaskOrchestrator(process.env.ANTHROPIC_API_KEY);
   atomicScriptGenerator = new AtomicScriptGenerator(process.env.ANTHROPIC_API_KEY);
   visualGuidance = new VisualGuidance(process.env.ANTHROPIC_API_KEY);
@@ -175,6 +183,8 @@ function createOverlayWindow() {
   overlayWindow = new BrowserWindow({
     width: 380,
     height: 240,
+    minHeight: 240,
+    maxHeight: 600,
     x: Math.max(20, Math.min(width - 380, width - 400)), // Right side, but ensure it fits
     y: Math.max(20, height - 280), // Bottom area with padding
     webPreferences: {
@@ -187,7 +197,7 @@ function createOverlayWindow() {
     skipTaskbar: true,
     frame: false,
     transparent: true,
-    resizable: false,
+    resizable: true,
     movable: true, // Allow dragging
     focusable: true, // Allow focusing for interactions
     show: true, // Always show from start
@@ -384,6 +394,15 @@ ipcMain.handle("minimize-overlay", async () => {
   if (overlayWindow) {
     overlayWindow.hide();
     return { success: true, message: "Overlay minimized to tray" };
+  }
+  return { success: false, message: "Overlay window not found" };
+});
+
+// Handle overlay close request
+ipcMain.handle("close-overlay", async () => {
+  if (overlayWindow) {
+    overlayWindow.hide();
+    return { success: true, message: "Overlay closed" };
   }
   return { success: false, message: "Overlay window not found" };
 });
@@ -704,6 +723,89 @@ ipcMain.handle("execute-dynamic-task", async (event, transcript) => {
   }
 });
 
+// Handle overlay window resize
+ipcMain.on("resize-overlay", (event, { width, height }) => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    const currentBounds = overlayWindow.getBounds();
+    overlayWindow.setBounds({
+      x: currentBounds.x,
+      y: currentBounds.y,
+      width: width,
+      height: height
+    });
+  }
+});
+
+// Handle manual command execution from overlay
+ipcMain.handle("execute-command", async (event, transcript, historyContext = null) => {
+  try {
+    console.log("🎤 Manual command from overlay:", transcript);
+    if (historyContext && historyContext.length > 0) {
+      console.log("📚 History context provided:", historyContext.length, "previous commands");
+    }
+    
+    // Send notifications to both windows about command processing
+    if (mainWindow) {
+      mainWindow.webContents.send("command-processing", transcript);
+    }
+    if (overlayWindow) {
+      overlayWindow.webContents.send("command-processing", transcript);
+    }
+    
+    // Set history context in task orchestrator if provided
+    if (historyContext && taskOrchestrator.setHistoryContext) {
+      taskOrchestrator.setHistoryContext(historyContext);
+    }
+    
+    // Use the same logic as execute-dynamic-task but with proper routing
+    const result = await taskOrchestrator.executeTask(transcript);
+    
+    // Handle different result types
+    if (result.type === 'CLARIFICATION_NEEDED') {
+      console.log("❓ Clarification needed for:", transcript);
+      const clarificationMessage = result.message || "Could you please be more specific about what you'd like me to do?";
+      
+      // Send clarification request to both windows
+      if (mainWindow) {
+        mainWindow.webContents.send("clarification-needed", transcript, clarificationMessage);
+      }
+      if (overlayWindow) {
+        overlayWindow.webContents.send("clarification-needed", transcript, clarificationMessage);
+      }
+    } else if (result.success) {
+      console.log("✅ Manual command executed successfully");
+      if (mainWindow) {
+        mainWindow.webContents.send("command-success", transcript);
+      }
+      if (overlayWindow) {
+        overlayWindow.webContents.send("command-success", transcript);
+      }
+    } else {
+      console.log("❌ Manual command failed:", result.error || result.message);
+      if (mainWindow) {
+        mainWindow.webContents.send("command-error", transcript, result.error || result.message);
+      }
+      if (overlayWindow) {
+        overlayWindow.webContents.send("command-error", transcript, result.error || result.message);
+      }
+    }
+    
+    return result;
+  } catch (error) {
+    console.error("Manual command execution error:", error);
+    
+    // Notify about error
+    if (mainWindow) {
+      mainWindow.webContents.send("command-error", transcript, error.message);
+    }
+    if (overlayWindow) {
+      overlayWindow.webContents.send("command-error", transcript, error.message);
+    }
+    
+    return { success: false, error: error.message };
+  }
+});
+
 // Handle system prompt updates
 ipcMain.handle("update-system-prompt", async (event, newPrompt) => {
   try {
@@ -749,6 +851,79 @@ ipcMain.handle("get-system-prompt", async (event) => {
     return { success: false, error: "AI service not available" };
   } catch (error) {
     console.error("Error getting system prompt:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get available models
+ipcMain.handle("get-available-models", async (event) => {
+  try {
+    if (aiService && aiService.getAvailableModels) {
+      return { success: true, models: aiService.getAvailableModels() };
+    }
+    return { success: false, error: "AI service not available" };
+  } catch (error) {
+    console.error("Error getting available models:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get current model configurations
+ipcMain.handle("get-model-config", async (event) => {
+  try {
+    if (aiService) {
+      return { 
+        success: true, 
+        textModel: aiService.getTextModel(),
+        imageModel: aiService.getImageModel()
+      };
+    }
+    return { success: false, error: "AI service not available" };
+  } catch (error) {
+    console.error("Error getting model config:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Set text model
+ipcMain.handle("set-text-model", async (event, provider, model) => {
+  try {
+    if (aiService && aiService.setTextModel) {
+      aiService.setTextModel(provider, model);
+      return { success: true };
+    }
+    return { success: false, error: "AI service not available" };
+  } catch (error) {
+    console.error("Error setting text model:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Set image model
+ipcMain.handle("set-image-model", async (event, provider, model) => {
+  try {
+    if (aiService && aiService.setImageModel) {
+      aiService.setImageModel(provider, model);
+      return { success: true };
+    }
+    return { success: false, error: "AI service not available" };
+  } catch (error) {
+    console.error("Error setting image model:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Test all models
+ipcMain.handle("test-all-models", async (event) => {
+  try {
+    if (aiService && aiService.testAllModels) {
+      console.log("🧪 Starting model testing...");
+      const results = await aiService.testAllModels();
+      return { success: true, results };
+    }
+    return { success: false, error: "AI service not available" };
+  } catch (error) {
+    console.error("Error testing models:", error);
     return { success: false, error: error.message };
   }
 });
@@ -818,16 +993,19 @@ ipcMain.handle("execute-web-task", async (event, taskType, params) => {
       const step = steps[i];
       console.log(`📋 Executing step ${i + 1}/${steps.length}: ${step.description}`);
       
-      // Use TaskOrchestrator's executeSingleAttempt method for proper visual guidance handling
-      const result = await taskOrchestrator.executeSingleAttempt(step, 0);
+      // Use TaskOrchestrator's executeIterationStep method for proper handling
+      const result = await taskOrchestrator.executeIterationStep(step);
       
-      if (!result.success && !step.continueOnError) {
-        console.error(`❌ Step ${i + 1} failed: ${result.error}`);
-        return { success: false, error: `Step ${i + 1} failed: ${result.error}` };
-      }
-
-      if (result.success) {
-        console.log(`✅ Step ${i + 1} completed: ${step.description}`);
+      if (!result.success) {
+        console.error(`❌ Step ${i + 1} failed:`, result.error);
+        return {
+          success: false,
+          stepNumber: i + 1,
+          totalSteps: steps.length,
+          error: result.error
+        };
+      } else {
+        console.log(`✅ Step ${i + 1} completed successfully`);
       }
 
       // Wait between steps
@@ -844,37 +1022,14 @@ ipcMain.handle("execute-web-task", async (event, taskType, params) => {
   }
 });
 
-// Execute a single atomic step (DEPRECATED - keeping for backward compatibility)
+// Deprecated method - for backward compatibility
 async function executeAtomicStep(step) {
-  console.warn("⚠️ executeAtomicStep is deprecated, use TaskOrchestrator.executeSingleAttempt instead");
+  console.warn("⚠️ executeAtomicStep is deprecated, use TaskOrchestrator.executeIterationStep instead");
   
-  // For visual guidance steps, delegate to TaskOrchestrator
-  if (step.type === "VISUAL_GUIDANCE" || step.script === "VISUAL_GUIDANCE_PLACEHOLDER") {
-    return await taskOrchestrator.executeSingleAttempt(step, 0);
+  if (!taskOrchestrator) {
+    throw new Error("TaskOrchestrator not initialized");
   }
-  
-  return new Promise((resolve) => {
-    const script = step.formattedScript;
-    
-    console.log(`Executing atomic step: ${script}`);
-
-    exec(script, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`Atomic step execution error:`, error);
-        resolve({ 
-          success: false, 
-          error: error.message,
-          code: error.code 
-        });
-      } else {
-        console.log(`Atomic step completed successfully`);
-        resolve({ 
-          success: true, 
-          output: stdout || stderr || "Step completed"
-        });
-      }
-    });
-  });
+  return await taskOrchestrator.executeIterationStep(step);
 }
 
 // Get task orchestrator status
@@ -887,6 +1042,47 @@ ipcMain.handle("stop-task", async () => {
   const result = taskOrchestrator.stop();
   console.log("🛑 Stop task result:", result);
   return result;
+});
+
+// Clear queue and stop all pending tasks
+ipcMain.handle("clear-queue", async () => {
+  try {
+    console.log("🗑️ Clear queue request received");
+    
+    // Stop current task if running
+    const stopResult = taskOrchestrator.stop();
+    console.log("🛑 Stop result during clear:", stopResult);
+    
+    // Get status to check what was cleared
+    const status = taskOrchestrator.getStatus();
+    console.log("📊 Task orchestrator status after clear:", status);
+    
+    if (stopResult.wasCancelled) {
+      return {
+        success: true,
+        message: `Cancelled active task and cleared queue`,
+        details: {
+          cancelledTask: stopResult.cancelledTask,
+          queueLength: status.queueLength
+        }
+      };
+    } else {
+      return {
+        success: true,
+        message: "Queue cleared (no active tasks)",
+        details: {
+          queueLength: status.queueLength
+        }
+      };
+    }
+  } catch (error) {
+    console.error("❌ Error clearing queue:", error);
+    return {
+      success: false,
+      message: `Failed to clear queue: ${error.message}`,
+      error: error.message
+    };
+  }
 });
 
 // Take a screenshot for verification

@@ -470,6 +470,114 @@
         color: #e0e0e0;
         white-space: pre-wrap;
       }
+
+      /* Model Configuration Styles */
+      .model-config-section {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .model-type-config {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .model-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.9);
+      }
+
+      .model-selection {
+        display: flex;
+        gap: 8px;
+      }
+
+      .provider-select,
+      .model-select {
+        padding: 8px 12px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        color: white;
+        font-size: 11px;
+        min-width: 120px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .provider-select:hover,
+      .model-select:hover {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.25);
+      }
+
+      .provider-select:focus,
+      .model-select:focus {
+        outline: none;
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(59, 130, 246, 0.6);
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+      }
+
+      .provider-select option,
+      .model-select option {
+        background: rgba(20, 20, 30, 0.95);
+        color: white;
+        padding: 4px;
+      }
+
+      .model-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 8px;
+      }
+
+      .test-results {
+        padding: 12px;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        font-size: 11px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .test-result-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 4px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .test-result-item:last-child {
+        border-bottom: none;
+      }
+
+      .test-result-model {
+        font-weight: 500;
+      }
+
+      .test-result-status {
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+      }
+
+      .test-result-status.success {
+        background: rgba(34, 197, 94, 0.2);
+        color: #22c55e;
+      }
+
+      .test-result-status.failed {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+      }
     </style>
   </head>
   <body>
@@ -529,6 +637,48 @@
           <button class="close-btn" id="close-modal">&times;</button>
         </div>
         
+        <div class="settings-section">
+          <label class="settings-label">🤖 AI Model Configuration</label>
+          <div class="settings-description">
+            Configure which AI models to use for different tasks. Make sure you have the required API keys in your .env file.
+          </div>
+          
+          <div class="model-config-section">
+            <div class="model-type-config">
+              <label class="model-label">Text Generation Model</label>
+              <div class="model-selection">
+                <select id="text-provider-select" class="provider-select">
+                  <option value="anthropic">Anthropic</option>
+                  <option value="groq">Groq</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+                <select id="text-model-select" class="model-select">
+                  <option value="">Select a model...</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="model-type-config">
+              <label class="model-label">Image Analysis Model</label>
+              <div class="model-selection">
+                <select id="image-provider-select" class="provider-select">
+                  <option value="anthropic">Anthropic</option>
+                  <option value="groq">Groq</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+                <select id="image-model-select" class="model-select">
+                  <option value="">Select a model...</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="model-actions">
+              <button class="action-btn secondary" id="test-models-btn">🧪 Test All Models</button>
+              <div id="test-results" class="test-results" style="display: none;"></div>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section">
           <label class="settings-label">System Prompt</label>
           <div class="settings-description">

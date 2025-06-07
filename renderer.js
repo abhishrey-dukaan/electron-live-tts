@@ -56,6 +56,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const cancelSettingsBtn = document.getElementById("cancel-settings-btn");
   const saveSettingsBtn = document.getElementById("save-settings-btn");
 
+  // Model configuration elements
+  const textProviderSelect = document.getElementById("text-provider-select");
+  const textModelSelect = document.getElementById("text-model-select");
+  const imageProviderSelect = document.getElementById("image-provider-select");
+  const imageModelSelect = document.getElementById("image-model-select");
+  const testModelsBtn = document.getElementById("test-models-btn");
+  const testResults = document.getElementById("test-results");
+
+  let availableModels = {};
+  let currentConfig = { textModel: null, imageModel: null };
+
   // Default system prompt for VoiceMac
   const defaultSystemPrompt = `You are VoiceMac, an AI assistant specialized in controlling a macOS environment via voice commands. Follow these rules:
 
@@ -112,10 +123,190 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
     localStorage.setItem('voicemac-system-prompt', prompt);
   }
 
+  // Load available models and setup model configuration
+  async function loadModelConfiguration() {
+    try {
+      // Get available models
+      const modelsResult = await ipcRenderer.invoke("get-available-models");
+      if (modelsResult.success) {
+        availableModels = modelsResult.models;
+        console.log("🤖 Available models loaded:", availableModels);
+      }
+
+      // Get current model configuration
+      const configResult = await ipcRenderer.invoke("get-model-config");
+      if (configResult.success) {
+        currentConfig = {
+          textModel: configResult.textModel,
+          imageModel: configResult.imageModel
+        };
+        console.log("📋 Current model config:", currentConfig);
+      }
+
+      // Setup provider select handlers
+      setupModelSelectors();
+    } catch (error) {
+      console.error("Error loading model configuration:", error);
+      addLogEntry("❌ Failed to load model configuration", "error");
+    }
+  }
+
+  // Setup model selector event handlers
+  function setupModelSelectors() {
+    // Text provider change handler
+    if (textProviderSelect) {
+      textProviderSelect.addEventListener("change", () => {
+        updateModelOptions(textProviderSelect.value, textModelSelect, 'text');
+      });
+    }
+
+    // Image provider change handler
+    if (imageProviderSelect) {
+      imageProviderSelect.addEventListener("change", () => {
+        updateModelOptions(imageProviderSelect.value, imageModelSelect, 'image');
+      });
+    }
+
+    // Text model change handler
+    if (textModelSelect) {
+      textModelSelect.addEventListener("change", async () => {
+        const provider = textProviderSelect.value;
+        const model = textModelSelect.value;
+        if (provider && model) {
+          try {
+            await ipcRenderer.invoke("set-text-model", provider, model);
+            addLogEntry(`✅ Text model set to ${provider}/${model}`, "success");
+          } catch (error) {
+            addLogEntry(`❌ Failed to set text model: ${error.message}`, "error");
+          }
+        }
+      });
+    }
+
+    // Image model change handler
+    if (imageModelSelect) {
+      imageModelSelect.addEventListener("change", async () => {
+        const provider = imageProviderSelect.value;
+        const model = imageModelSelect.value;
+        if (provider && model) {
+          try {
+            await ipcRenderer.invoke("set-image-model", provider, model);
+            addLogEntry(`✅ Image model set to ${provider}/${model}`, "success");
+          } catch (error) {
+            addLogEntry(`❌ Failed to set image model: ${error.message}`, "error");
+          }
+        }
+      });
+    }
+
+    // Test models button handler
+    if (testModelsBtn) {
+      testModelsBtn.addEventListener("click", async () => {
+        await testAllModels();
+      });
+    }
+  }
+
+  // Update model options based on selected provider
+  function updateModelOptions(provider, selectElement, modelType) {
+    if (!selectElement || !availableModels[provider]) return;
+
+    // Clear existing options
+    selectElement.innerHTML = '<option value="">Select a model...</option>';
+
+    // Add models for the selected provider
+    const models = availableModels[provider][modelType] || [];
+    models.forEach(model => {
+      const option = document.createElement('option');
+      option.value = model.id;
+      option.textContent = `${model.name} - ${model.description}`;
+      selectElement.appendChild(option);
+    });
+
+    // Set current selection if it matches
+    if (modelType === 'text' && currentConfig.textModel && 
+        currentConfig.textModel.provider === provider) {
+      selectElement.value = currentConfig.textModel.model;
+    } else if (modelType === 'image' && currentConfig.imageModel && 
+               currentConfig.imageModel.provider === provider) {
+      selectElement.value = currentConfig.imageModel.model;
+    }
+  }
+
+  // Set current model selections in UI
+  function setCurrentModelSelections() {
+    if (currentConfig.textModel) {
+      if (textProviderSelect) {
+        textProviderSelect.value = currentConfig.textModel.provider;
+        updateModelOptions(currentConfig.textModel.provider, textModelSelect, 'text');
+      }
+    }
+
+    if (currentConfig.imageModel) {
+      if (imageProviderSelect) {
+        imageProviderSelect.value = currentConfig.imageModel.provider;
+        updateModelOptions(currentConfig.imageModel.provider, imageModelSelect, 'image');
+      }
+    }
+  }
+
+  // Test all models
+  async function testAllModels() {
+    if (!testModelsBtn || !testResults) return;
+
+    testModelsBtn.disabled = true;
+    testModelsBtn.textContent = "🧪 Testing...";
+    testResults.style.display = "block";
+    testResults.innerHTML = "<div style='text-align: center; padding: 20px;'>🔄 Testing models, please wait...</div>";
+
+    try {
+      const result = await ipcRenderer.invoke("test-all-models");
+      
+      if (result.success) {
+        displayTestResults(result.results);
+        addLogEntry(`🧪 Model testing complete: ${result.results.successful}/${result.results.tested} models working`, "info");
+      } else {
+        testResults.innerHTML = `<div style='color: #ef4444; text-align: center; padding: 20px;'>❌ Testing failed: ${result.error}</div>`;
+        addLogEntry(`❌ Model testing failed: ${result.error}`, "error");
+      }
+    } catch (error) {
+      testResults.innerHTML = `<div style='color: #ef4444; text-align: center; padding: 20px;'>❌ Testing error: ${error.message}</div>`;
+      addLogEntry(`❌ Model testing error: ${error.message}`, "error");
+    } finally {
+      testModelsBtn.disabled = false;
+      testModelsBtn.textContent = "🧪 Test All Models";
+    }
+  }
+
+  // Display test results
+  function displayTestResults(results) {
+    if (!testResults) return;
+
+    const summary = `
+      <div style="margin-bottom: 12px; padding: 8px; background: rgba(59, 130, 246, 0.2); border-radius: 6px; text-align: center;">
+        📊 Results: ${results.successful}/${results.tested} models working (${Math.round(results.successful / results.tested * 100)}% success rate)
+      </div>
+    `;
+
+    const items = results.details.map(detail => {
+      const statusClass = detail.status === 'success' ? 'success' : 'failed';
+      const statusText = detail.status === 'success' ? '✅ Working' : '❌ Failed';
+      
+      return `
+        <div class="test-result-item">
+          <span class="test-result-model">${detail.provider}/${detail.model.split('-').slice(0, 3).join('-')}</span>
+          <span class="test-result-status ${statusClass}">${statusText}</span>
+        </div>
+      `;
+    }).join('');
+
+    testResults.innerHTML = summary + items;
+  }
+
   // Open settings modal
   settingsBtn.addEventListener("click", async () => {
     try {
-      // Try to get the current system prompt from the main process
+      // Load system prompt
       const result = await ipcRenderer.invoke("get-system-prompt");
       if (result.success) {
         systemPromptTextarea.value = result.prompt;
@@ -123,10 +314,15 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
         // Fallback to localStorage
         systemPromptTextarea.value = loadSystemPrompt();
       }
+
+      // Load model configuration
+      await loadModelConfiguration();
+      setCurrentModelSelections();
     } catch (error) {
-      console.error("Error loading current system prompt:", error);
-      // Fallback to localStorage
+      console.error("Error loading settings:", error);
+      // Fallback to localStorage for system prompt
       systemPromptTextarea.value = loadSystemPrompt();
+      addLogEntry("⚠️ Some settings failed to load", "warning");
     }
     
     settingsModal.classList.add("active");
