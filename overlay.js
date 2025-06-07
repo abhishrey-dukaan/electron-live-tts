@@ -118,40 +118,173 @@ function updateHistoryDisplay() {
   transcriptArea.scrollTop = transcriptArea.scrollHeight;
 }
 
-// Dynamically resize window based on content
+// Throttle function with leading edge execution
+function throttle(func, limit) {
+  let lastFunc;
+  let lastRan;
+  return function(...args) {
+    if (!lastRan) {
+      func.apply(this, args);
+      lastRan = Date.now();
+    } else {
+      clearTimeout(lastFunc);
+      lastFunc = setTimeout(() => {
+        if ((Date.now() - lastRan) >= limit) {
+          func.apply(this, args);
+          lastRan = Date.now();
+        }
+      }, limit - (Date.now() - lastRan));
+    }
+  }
+}
+
 function resizeWindow() {
   try {
-    // Calculate content height
+    // Get elements
     const header = document.querySelector('.header');
     const transcript = document.querySelector('.transcript');
     const inputArea = document.querySelector('.input-area');
     const statusArea = document.querySelector('.status-area');
+    const container = document.querySelector('.container');
     
-    if (!header || !transcript || !inputArea) return;
+    if (!header || !transcript || !inputArea || !container) return;
     
-    const headerHeight = header.offsetHeight;
-    const inputHeight = inputArea.offsetHeight;
-    const statusHeight = statusArea ? 36 : 0; // Status area height + padding
+    // Store scroll position
+    const scrollTop = transcript.scrollTop;
+    const scrollHeight = transcript.scrollHeight;
+    const isScrolledToBottom = Math.abs((scrollTop + transcript.clientHeight) - scrollHeight) < 2;
     
-    // Calculate needed transcript height
-    const transcriptContent = transcript.scrollHeight;
-    const maxTranscriptHeight = 300; // Max height from CSS
-    const actualTranscriptHeight = Math.min(transcriptContent, maxTranscriptHeight);
-    
-    // Calculate total height needed
-    const totalHeight = headerHeight + actualTranscriptHeight + inputHeight + statusHeight + 40; // 40px for margins/padding
-    
-    // Constrain to min/max heights
-    const finalHeight = Math.max(240, Math.min(600, totalHeight));
-    
-    // Request window resize via IPC
-    if (typeof require !== 'undefined') {
-      const { ipcRenderer } = require('electron');
-      ipcRenderer.send('resize-overlay', { width: 380, height: finalHeight });
-    }
+    // Use RAF for smooth updates
+    requestAnimationFrame(() => {
+      // Reset any fixed heights to get true content size
+      transcript.style.maxHeight = '';
+      container.style.height = '';
+      
+      // Get the actual content height
+      const transcriptContent = Math.max(280, transcript.scrollHeight);
+      const headerHeight = header.offsetHeight;
+      const inputHeight = inputArea.offsetHeight;
+      const statusHeight = statusArea ? statusArea.offsetHeight + 16 : 0;
+      
+      // Calculate the minimum height needed for the window
+      const minHeight = 400;
+      const maxHeight = Math.min(800, window.screen.height * 0.8);
+      
+      // Calculate needed height for content
+      const neededHeight = Math.max(minHeight, headerHeight + transcriptContent + inputHeight + 8);
+      
+      // Set final height within bounds
+      const finalHeight = Math.min(maxHeight, neededHeight);
+      
+      // Set transcript max height to allow scrolling if needed
+      const transcriptMaxHeight = Math.max(280, finalHeight - headerHeight - inputHeight - 16);
+      transcript.style.maxHeight = `${transcriptMaxHeight}px`;
+      
+      // Restore scroll position
+      if (isScrolledToBottom) {
+        transcript.scrollTop = transcript.scrollHeight;
+      } else {
+        transcript.scrollTop = scrollTop;
+      }
+      
+      // Request window resize via IPC
+      if (typeof require !== 'undefined') {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('resize-overlay', { 
+          width: 380, 
+          height: finalHeight
+        });
+      }
+    });
   } catch (error) {
     console.error('Error resizing window:', error);
   }
+}
+
+// Super throttled resize for input changes
+const inputResizeThrottle = throttle(resizeWindow, 150);
+
+// Regular throttle for other changes
+const regularResizeThrottle = throttle(resizeWindow, 50);
+
+// Handle input changes separately
+const inputField = document.querySelector('.input-field');
+if (inputField) {
+  inputField.addEventListener('input', () => {
+    requestAnimationFrame(inputResizeThrottle);
+  }, { passive: true });
+}
+
+// Call resize on content changes
+const observer = new MutationObserver((mutations) => {
+  // Check if we need to scroll to bottom
+  const transcript = document.querySelector('.transcript');
+  if (!transcript) return;
+  
+  const shouldScrollToBottom = mutations.some(mutation => {
+    return mutation.type === 'childList' && mutation.addedNodes.length > 0;
+  });
+  
+  requestAnimationFrame(() => {
+    regularResizeThrottle();
+    if (shouldScrollToBottom) {
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+  });
+});
+
+// Observe transcript changes
+const transcript = document.querySelector('.transcript');
+if (transcript) {
+  observer.observe(transcript, { 
+    childList: true, 
+    subtree: true, 
+    characterData: true,
+    attributes: true 
+  });
+  
+  // Smooth scroll handling with RAF
+  let isScrolling = false;
+  let rafId = null;
+  
+  transcript.addEventListener('scroll', () => {
+    isScrolling = true;
+    if (rafId) return;
+    
+    rafId = requestAnimationFrame(() => {
+      const statusArea = document.querySelector('.status-area');
+      if (statusArea && statusArea.classList.contains('visible')) {
+        statusArea.classList.remove('visible');
+      }
+      isScrolling = false;
+      rafId = null;
+    });
+  }, { passive: true });
+}
+
+// Initial resize
+resizeWindow();
+
+// Add resize listener for window with RAF
+window.addEventListener('resize', () => {
+  requestAnimationFrame(regularResizeThrottle);
+}, { passive: true });
+
+// Add scroll handler to hide status area when scrolling
+if (transcript) {
+  let scrollTimeout;
+  transcript.addEventListener('scroll', () => {
+    const statusArea = document.querySelector('.status-area');
+    if (statusArea && statusArea.classList.contains('visible')) {
+      statusArea.classList.remove('visible');
+    }
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+      if (statusArea) {
+        statusArea.classList.add('visible');
+      }
+    }, 1000);
+  });
 }
 
 // Helper function to get relative time
