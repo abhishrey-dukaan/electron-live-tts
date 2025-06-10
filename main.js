@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, systemPreferences } = require("electron");
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const WebSocket = require("ws");
@@ -7,7 +7,7 @@ const AIService = require("./ai-service");
 const TaskOrchestrator = require("./task-orchestrator");
 const AtomicScriptGenerator = require("./atomic-script-generator");
 const VisualGuidance = require("./visual-guidance");
-const ComprehensiveTestSuite = require("./comprehensive-test-suite");
+const PlaywrightService = require("./playwright-service");
 require("dotenv").config();
 
 // Helper function to load saved system prompt
@@ -38,24 +38,25 @@ function saveSystemPrompt(prompt) {
 
 let mainWindow;
 let overlayWindow;
-let onboardingWindow;
 let deepgramSocket;
 let aiService;
 let taskOrchestrator;
 let atomicScriptGenerator;
 let visualGuidance;
-let comprehensiveTestSuite;
+let playwrightService;
 let tray = null;
 let lastAudioSentTime = Date.now();
-let userPreferences = null;
 
-function createWindow() {
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      // Modern Electron security best practices
+      nodeIntegration: false,
+      contextIsolation: true,
+      enableRemoteModule: false,
+      preload: path.join(__dirname, 'preload.js'),
       // Enable background processing
       backgroundThrottling: false,
     },
@@ -105,16 +106,35 @@ function createWindow() {
   // Initialize AI service and task orchestrator
   aiService = new AIService();
   
-  // Set API keys for all providers
+  // Set API keys for all providers - loaded from .env file
+  const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+  const GROQ_KEY = process.env.GROQ_API_KEY;
+  const OPENAI_KEY = process.env.OPENAI_API_KEY;
+  const DEEPGRAM_KEY = process.env.DEEPGRAM_API_KEY;
+  
   aiService.setApiKeys({
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-    GROQ_API_KEY: process.env.GROQ_API_KEY,
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY
+    ANTHROPIC_API_KEY: ANTHROPIC_KEY,
+    GROQ_API_KEY: GROQ_KEY,
+    OPENAI_API_KEY: OPENAI_KEY
   });
   
-  taskOrchestrator = new TaskOrchestrator(process.env.ANTHROPIC_API_KEY);
-  atomicScriptGenerator = new AtomicScriptGenerator(process.env.ANTHROPIC_API_KEY);
-  visualGuidance = new VisualGuidance(process.env.ANTHROPIC_API_KEY);
+  taskOrchestrator = new TaskOrchestrator(aiService);
+  atomicScriptGenerator = new AtomicScriptGenerator(aiService);
+  visualGuidance = new VisualGuidance(aiService.getApiKey('anthropic'));
+  playwrightService = new PlaywrightService();
+  
+  // Test the vision models at startup to ensure they work
+  console.log("🧪 Testing vision models at startup...");
+  try {
+    const visionResults = await aiService.testVisionModels();
+    if (visionResults.successful > 0) {
+      console.log(`✅ Vision models working: ${visionResults.successful}/${visionResults.tested} models functional`);
+    } else {
+      console.log(`⚠️ No vision models working: ${visionResults.failed}/${visionResults.tested} models failed`);
+    }
+  } catch (error) {
+    console.error("⚠️ Vision model startup test failed:", error);
+  }
   
   // Load saved system prompt from storage if available
   const savedPrompt = loadSavedSystemPrompt();
@@ -166,15 +186,17 @@ function createWindow() {
     notifyScreenshotAnalysisComplete,
     notifyVisualFallbackResult,
     notifyScreenshotCapture,
-    notifyClaudeAnalysis,
+    notifyAIAnalysis,
     notifyCloudUpload
   });
 
   // Send environment variables to renderer
   mainWindow.webContents.on("did-finish-load", () => {
     mainWindow.webContents.send("init-env", {
-      DEEPGRAM_API_KEY: process.env.DEEPGRAM_API_KEY,
-      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+      DEEPGRAM_API_KEY: DEEPGRAM_KEY,
+      ANTHROPIC_API_KEY: ANTHROPIC_KEY,
+      GROQ_API_KEY: GROQ_KEY,
+      OPENAI_API_KEY: OPENAI_KEY,
     });
   });
 }
@@ -183,26 +205,20 @@ function createOverlayWindow() {
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height } = primaryDisplay.workAreaSize;
-  
-  // Calculate safe positioning with proper margins
-  const overlayWidth = 380;
-  const overlayHeight = 400; // Use a mid-range height for initial positioning
-  const margin = 30; // Increased margin for better spacing
-  
-  // Position overlay in top-right corner with safe margins (moved higher up)
-  const safeX = Math.max(margin, width - overlayWidth - margin);
-  const safeY = Math.max(margin, 100); // Positioned much higher up on screen
 
   overlayWindow = new BrowserWindow({
-    width: overlayWidth,
-    height: 240, // Start with minimum height
+    width: 380,
+    height: 240,
     minHeight: 240,
     maxHeight: 600,
-    x: safeX,
-    y: safeY,
+    x: Math.max(20, width - 400), // Right side with padding
+    y: Math.max(20, height - 640), // Bottom area with padding for max height (600px + 40px margin)
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      // Modern Electron security best practices
+      nodeIntegration: false,
+      contextIsolation: true,
+      enableRemoteModule: false,
+      preload: path.join(__dirname, 'preload.js'),
       backgroundThrottling: false,
     },
     // Overlay window properties - make it draggable and persistent
@@ -221,25 +237,54 @@ function createOverlayWindow() {
 
   overlayWindow.loadFile("overlay.html");
 
-  // Add bounds checking to keep window in viewport
-  overlayWindow.on('move', () => {
+  // Add improved bounds checking to keep window in viewport
+  function ensureOverlayOnScreen() {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return;
+    
     const bounds = overlayWindow.getBounds();
-    const display = screen.getDisplayMatching(bounds);
-    const { x: screenX, y: screenY, width: screenWidth, height: screenHeight } = display.workArea;
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { x: screenX, y: screenY, width: screenWidth, height: screenHeight } = primaryDisplay.workArea;
     
     let newX = bounds.x;
     let newY = bounds.y;
+    let changed = false;
     
-    // Keep window within screen bounds
-    if (bounds.x < screenX) newX = screenX;
-    if (bounds.y < screenY) newY = screenY;
-    if (bounds.x + bounds.width > screenX + screenWidth) newX = screenX + screenWidth - bounds.width;
-    if (bounds.y + bounds.height > screenY + screenHeight) newY = screenY + screenHeight - bounds.height;
+    // Ensure window is not completely off-screen
+    const minVisibleWidth = 100; // At least 100px visible
+    const minVisibleHeight = 50;  // At least 50px visible
     
-    // Only move if necessary to avoid infinite loops
-    if (newX !== bounds.x || newY !== bounds.y) {
-      overlayWindow.setBounds({ x: newX, y: newY, width: bounds.width, height: bounds.height });
+    // Check horizontal bounds
+    if (bounds.x + bounds.width < screenX + minVisibleWidth) {
+      newX = screenX; // Too far left
+      changed = true;
+    } else if (bounds.x > screenX + screenWidth - minVisibleWidth) {
+      newX = screenX + screenWidth - bounds.width; // Too far right
+      changed = true;
     }
+    
+    // Check vertical bounds
+    if (bounds.y + bounds.height < screenY + minVisibleHeight) {
+      newY = screenY; // Too far up
+      changed = true;
+    } else if (bounds.y > screenY + screenHeight - minVisibleHeight) {
+      newY = screenY + screenHeight - bounds.height; // Too far down
+      changed = true;
+    }
+    
+    // Apply changes if needed
+    if (changed) {
+      overlayWindow.setBounds({ x: newX, y: newY, width: bounds.width, height: bounds.height });
+      console.log(`📍 Adjusted overlay position to stay on screen: (${newX}, ${newY})`);
+    }
+  }
+
+  overlayWindow.on('move', ensureOverlayOnScreen);
+  overlayWindow.on('resize', ensureOverlayOnScreen);
+
+  // Ensure overlay starts on-screen
+  overlayWindow.once('ready-to-show', () => {
+    ensureOverlayOnScreen();
+    overlayWindow.show();
   });
 
   // Make overlay persistent across all screens and workspaces
@@ -271,8 +316,7 @@ function createOverlayWindow() {
     }
   }, 5000); // Check every 5 seconds
   
-  // Always show overlay immediately
-  overlayWindow.show();
+  // Don't auto-show here, let ready-to-show handle it
 }
 
 function createTray() {
@@ -339,18 +383,12 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
-  // Check if onboarding is completed
-  if (shouldShowOnboarding()) {
-    createOnboardingWindow();
-  } else {
-    startMainApp();
-  }
-  
-  // Initialize test suite
-  comprehensiveTestSuite = new ComprehensiveTestSuite();
+  createWindow();
+  createOverlayWindow();
+  createTray();
   
   // Prevent app suspension
-  app.setName('VoiceMac Assistant');
+  app.setName('Voice Command Assistant');
   
   // Keep the app running in background
   if (process.platform === 'darwin') {
@@ -369,12 +407,8 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    if (shouldShowOnboarding()) {
-      createOnboardingWindow();
-    } else {
-      createWindow();
-    }
-  } else if (mainWindow) {
+    createWindow();
+  } else {
     mainWindow.show();
     if (process.platform === 'darwin') {
       app.dock.show();
@@ -383,8 +417,18 @@ app.on("activate", () => {
 });
 
 // Prevent the app from being suspended
-app.on('before-quit', () => {
+app.on('before-quit', async (event) => {
   app.isQuiting = true;
+  
+  // Clean up Playwright browser
+  if (playwrightService) {
+    console.log("🧹 Cleaning up Playwright service...");
+    try {
+      await playwrightService.close();
+    } catch (error) {
+      console.error("Error closing Playwright:", error);
+    }
+  }
 });
 
 // Keep the app active even when hidden
@@ -433,8 +477,29 @@ ipcMain.handle("close-overlay", async () => {
 // Enhanced Deepgram connection function with rate limiting
 async function startDeepgramConnection() {
   try {
-    if (!process.env.DEEPGRAM_API_KEY) {
-      throw new Error("Deepgram API key not found");
+    // Use hardcoded Deepgram API key for reliability
+    const DEEPGRAM_API_KEY = "a076385db3d2cb8e4eb9c4276b2eed2ae70d154c";
+    
+    if (!DEEPGRAM_API_KEY) {
+      const errorMsg = "❌ Deepgram API key not configured in application";
+      console.error(errorMsg);
+      mainWindow.webContents.send("deepgram-error", errorMsg);
+      if (overlayWindow) {
+        overlayWindow.webContents.send("deepgram-error", errorMsg);
+      }
+      throw new Error("Deepgram API key not configured");
+    }
+
+    // Check network connectivity first
+    const networkCheck = await checkNetworkConnectivity();
+    if (!networkCheck.connected) {
+      const errorMsg = `❌ Network connectivity issue: ${networkCheck.error}`;
+      console.error(errorMsg);
+      mainWindow.webContents.send("deepgram-error", errorMsg);
+      if (overlayWindow) {
+        overlayWindow.webContents.send("deepgram-error", errorMsg);
+      }
+      return false;
     }
 
     // Prevent multiple concurrent connections
@@ -458,7 +523,7 @@ async function startDeepgramConnection() {
       "wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=true&smart_format=true&endpointing=300&utterance_end_ms=2000&vad_events=true",
       {
         headers: {
-          Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+          Authorization: `Token ${DEEPGRAM_API_KEY}`,
         },
       }
     );
@@ -467,11 +532,14 @@ async function startDeepgramConnection() {
     let keepAliveInterval;
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 3;
+    let networkFailureCount = 0;
+    const maxNetworkFailures = 5;
     
     // Set up event handlers
     deepgramSocket.on("open", () => {
       console.log("✅ Deepgram WebSocket opened successfully");
       reconnectAttempts = 0; // Reset on successful connection
+      networkFailureCount = 0; // Reset network failure count
       lastAudioSentTime = Date.now(); // Reset global audio tracking
       
       // Send periodic audio data checks instead of ping/pong
@@ -529,16 +597,29 @@ async function startDeepgramConnection() {
         });
       }
       
-      // Enhanced auto-reconnect logic with better rate limiting
+      // Enhanced auto-reconnect logic with network failure detection
       if (code !== 1000 && code !== 1001 && reconnectAttempts < maxReconnectAttempts) {
+        const isNetworkError = code === 1006 || reason?.toString().includes('ENOTFOUND') || reason?.toString().includes('ECONNREFUSED');
         const isRateLimited = code === 1006 && reason?.toString().includes('429');
         const isTimeout = code === 1011;
+        
+        // If it's a network error, check connectivity first
+        if (isNetworkError) {
+          networkFailureCount++;
+          if (networkFailureCount >= maxNetworkFailures) {
+            console.log("🛑 Too many network failures, stopping auto-reconnection");
+            console.log("💡 Please check your internet connection and restart the app manually");
+            return;
+          }
+        }
         
         let backoffTime;
         if (isRateLimited) {
           backoffTime = Math.pow(2, reconnectAttempts + 3) * 1000; // Longer for rate limits: 16s, 32s, 64s
         } else if (isTimeout) {
           backoffTime = 5000; // Quick reconnect for timeouts
+        } else if (isNetworkError) {
+          backoffTime = Math.pow(2, reconnectAttempts + 2) * 1000; // Network errors: 8s, 16s, 32s
         } else {
           backoffTime = Math.pow(2, reconnectAttempts + 1) * 1000; // Normal: 4s, 8s, 16s
         }
@@ -575,18 +656,27 @@ async function startDeepgramConnection() {
         keepAliveInterval = null;
       }
       
-      // Check for rate limiting
-      if (error.message && error.message.includes('429')) {
+      let errorMessage = error.message;
+      
+      // Check for common error types
+      if (error.message && error.message.includes('401')) {
+        errorMessage = "❌ Invalid Deepgram API key. Please:\n1. Check your API key at https://console.deepgram.com/\n2. Update DEEPGRAM_API_KEY in your .env file\n3. Restart the application";
+      } else if (error.message && error.message.includes('429')) {
         console.log("⚠️  Rate limited by Deepgram - will retry with longer delay");
-        mainWindow.webContents.send("deepgram-error", "Rate limited - reconnecting with delay");
-        if (overlayWindow) {
-          overlayWindow.webContents.send("deepgram-error", "Rate limited - reconnecting with delay");
-        }
-      } else {
-        mainWindow.webContents.send("deepgram-error", error.message);
-        if (overlayWindow) {
-          overlayWindow.webContents.send("deepgram-error", error.message);
-        }
+        errorMessage = "Rate limited - reconnecting with delay";
+      } else if (error.message && error.message.includes('Unexpected server response: 401')) {
+        errorMessage = "❌ Unauthorized: Invalid Deepgram API key. Please check your API key in the .env file.";
+      } else if (error.message && error.message.includes('ENOTFOUND')) {
+        errorMessage = "❌ Network connectivity issue: Cannot reach Deepgram servers. Please check your internet connection.";
+        networkFailureCount++;
+      } else if (error.message && error.message.includes('ECONNREFUSED')) {
+        errorMessage = "❌ Connection refused: Cannot connect to Deepgram servers.";
+        networkFailureCount++;
+      }
+      
+      mainWindow.webContents.send("deepgram-error", errorMessage);
+      if (overlayWindow) {
+        overlayWindow.webContents.send("deepgram-error", errorMessage);
       }
     });
 
@@ -612,6 +702,33 @@ async function startDeepgramConnection() {
     console.error("❌ Error starting Deepgram:", error);
     return false;
   }
+}
+
+// Add network connectivity check function
+async function checkNetworkConnectivity() {
+  return new Promise((resolve) => {
+    const { spawn } = require('child_process');
+    const ping = spawn('ping', ['-c', '1', '8.8.8.8']);
+    
+    let timeout = setTimeout(() => {
+      ping.kill();
+      resolve({ connected: false, error: "Network timeout" });
+    }, 5000);
+    
+    ping.on('exit', (code) => {
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve({ connected: true });
+      } else {
+        resolve({ connected: false, error: "Cannot reach internet" });
+      }
+    });
+    
+    ping.on('error', (error) => {
+      clearTimeout(timeout);
+      resolve({ connected: false, error: error.message });
+    });
+  });
 }
 
 // Handle start Deepgram connection
@@ -749,23 +866,64 @@ ipcMain.handle("execute-dynamic-task", async (event, transcript) => {
 // Handle overlay window resize
 ipcMain.on("resize-overlay", (event, { width, height }) => {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
+    const { screen } = require('electron');
     const currentBounds = overlayWindow.getBounds();
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { x: screenX, y: screenY, width: screenWidth, height: screenHeight } = primaryDisplay.workArea;
+    
+    let newX = currentBounds.x;
+    let newY = currentBounds.y;
+    
+    // Ensure the resized window doesn't go off screen
+    // Check if window would extend beyond right edge
+    if (newX + width > screenX + screenWidth) {
+      newX = Math.max(screenX, screenX + screenWidth - width);
+    }
+    
+    // Check if window would extend beyond bottom edge
+    if (newY + height > screenY + screenHeight) {
+      newY = Math.max(screenY, screenY + screenHeight - height);
+    }
+    
     overlayWindow.setBounds({
-      x: currentBounds.x,
-      y: currentBounds.y,
+      x: newX,
+      y: newY,
       width: width,
       height: height
     });
+    
+    // Only log if position actually changed
+    if (newX !== currentBounds.x || newY !== currentBounds.y) {
+      console.log(`📍 Overlay repositioned to ${width}x${height} at (${newX}, ${newY})`);
+    }
   }
+});
+
+// Handle overlay position reset
+ipcMain.handle("reset-overlay-position", () => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workArea;
+    
+    // Reset to default position (bottom-right with proper margin for max height)
+    overlayWindow.setBounds({
+      x: Math.max(20, width - 400),
+      y: Math.max(20, height - 640), // Account for max height of 600px + 40px margin
+      width: 380,
+      height: 240
+    });
+    
+    console.log("🔄 Overlay position reset to default");
+    return { success: true, message: "Overlay position reset" };
+  }
+  return { success: false, message: "Overlay window not found" };
 });
 
 // Handle manual command execution from overlay
 ipcMain.handle("execute-command", async (event, transcript, historyContext = null) => {
   try {
     console.log("🎤 Manual command from overlay:", transcript);
-    if (historyContext && historyContext.length > 0) {
-      console.log("📚 History context provided:", historyContext.length, "previous commands");
-    }
     
     // Send notifications to both windows about command processing
     if (mainWindow) {
@@ -775,39 +933,28 @@ ipcMain.handle("execute-command", async (event, transcript, historyContext = nul
       overlayWindow.webContents.send("command-processing", transcript);
     }
     
-    // Set history context in task orchestrator if provided
-    if (historyContext && taskOrchestrator.setHistoryContext) {
-      taskOrchestrator.setHistoryContext(historyContext);
-    }
+    // Use the new, intelligent command handler
+    const result = await taskOrchestrator.handleCommand(transcript, historyContext);
     
-    // Use the same logic as execute-dynamic-task but with proper routing
-    const result = await taskOrchestrator.executeTask(transcript);
-    
-    // Handle different result types
-    if (result.type === 'CLARIFICATION_NEEDED') {
-      console.log("❓ Clarification needed for:", transcript);
-      const clarificationMessage = result.message || "Could you please be more specific about what you'd like me to do?";
-      
-      // Send clarification request to both windows
-      if (mainWindow) {
-        mainWindow.webContents.send("clarification-needed", transcript, clarificationMessage);
-      }
+    // Handle the result from the orchestrator
+    if (result.type === 'STOP_COMMAND_SUCCESS') {
+      console.log('✅ Stop command processed successfully.');
       if (overlayWindow) {
-        overlayWindow.webContents.send("clarification-needed", transcript, clarificationMessage);
+        overlayWindow.webContents.send('tasks-cleared', result.message);
+      }
+    } else if (result.type === 'CLARIFICATION_NEEDED') {
+      console.log("❓ Clarification needed for:", transcript);
+      // Send clarification request to the UI
+      if (overlayWindow) {
+        overlayWindow.webContents.send("clarification-needed", transcript, result.message);
       }
     } else if (result.success) {
       console.log("✅ Manual command executed successfully");
-      if (mainWindow) {
-        mainWindow.webContents.send("command-success", transcript);
-      }
       if (overlayWindow) {
         overlayWindow.webContents.send("command-success", transcript);
       }
     } else {
       console.log("❌ Manual command failed:", result.error || result.message);
-      if (mainWindow) {
-        mainWindow.webContents.send("command-error", transcript, result.error || result.message);
-      }
       if (overlayWindow) {
         overlayWindow.webContents.send("command-error", transcript, result.error || result.message);
       }
@@ -818,9 +965,6 @@ ipcMain.handle("execute-command", async (event, transcript, historyContext = nul
     console.error("Manual command execution error:", error);
     
     // Notify about error
-    if (mainWindow) {
-      mainWindow.webContents.send("command-error", transcript, error.message);
-    }
     if (overlayWindow) {
       overlayWindow.webContents.send("command-error", transcript, error.message);
     }
@@ -913,6 +1057,17 @@ ipcMain.handle("set-text-model", async (event, provider, model) => {
   try {
     if (aiService && aiService.setTextModel) {
       aiService.setTextModel(provider, model);
+      
+      // Broadcast updated model info to all windows
+      const textModel = aiService.getTextModel();
+      const imageModel = aiService.getImageModel();
+      if (mainWindow) {
+        mainWindow.webContents.send('model-info', { textModel, imageModel });
+      }
+      if (overlayWindow) {
+        overlayWindow.webContents.send('model-info', { textModel, imageModel });
+      }
+      
       return { success: true };
     }
     return { success: false, error: "AI service not available" };
@@ -927,6 +1082,17 @@ ipcMain.handle("set-image-model", async (event, provider, model) => {
   try {
     if (aiService && aiService.setImageModel) {
       aiService.setImageModel(provider, model);
+      
+      // Broadcast updated model info to all windows
+      const textModel = aiService.getTextModel();
+      const imageModel = aiService.getImageModel();
+      if (mainWindow) {
+        mainWindow.webContents.send('model-info', { textModel, imageModel });
+      }
+      if (overlayWindow) {
+        overlayWindow.webContents.send('model-info', { textModel, imageModel });
+      }
+      
       return { success: true };
     }
     return { success: false, error: "AI service not available" };
@@ -948,6 +1114,39 @@ ipcMain.handle("test-all-models", async (event) => {
   } catch (error) {
     console.error("Error testing models:", error);
     return { success: false, error: error.message };
+  }
+});
+
+// Test vision models specifically
+ipcMain.handle("test-vision-models", async (event) => {
+  try {
+    if (aiService && aiService.testVisionModels) {
+      console.log("🧪 Starting vision model testing...");
+      const results = await aiService.testVisionModels();
+      return { success: true, results };
+    }
+    return { success: false, error: "AI service not available" };
+  } catch (error) {
+    console.error("Error testing vision models:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Handle model info requests
+ipcMain.on("request-model-info", (event) => {
+  try {
+    const textModel = aiService.getTextModel();
+    const imageModel = aiService.getImageModel();
+    
+    // Send to both main window and overlay
+    if (mainWindow) {
+      mainWindow.webContents.send('model-info', { textModel, imageModel });
+    }
+    if (overlayWindow) {
+      overlayWindow.webContents.send('model-info', { textModel, imageModel });
+    }
+  } catch (error) {
+    console.error("Error sending model info:", error);
   }
 });
 
@@ -989,58 +1188,84 @@ async function handleSimpleAction(transcript) {
   return await taskOrchestrator.executeTask(transcript);
 }
 
-// Create predefined task templates for common requests
+// Playwright-based web task handler
 ipcMain.handle("execute-web-task", async (event, taskType, params) => {
   try {
-    let steps = [];
-
-    switch (taskType) {
-      case 'youtube_search':
-        steps = await atomicScriptGenerator.generateYouTubeSteps(params.query);
-        break;
-      case 'google_search':
-        steps = await atomicScriptGenerator.generateWebBrowsingSteps("google.com", params.query);
-        break;
-      case 'navigate_url':
-        steps = await atomicScriptGenerator.generateWebBrowsingSteps(params.url);
-        break;
-      default:
-        return { success: false, error: "Unknown task type" };
-    }
-
-    // Use TaskOrchestrator to execute steps (handles visual guidance properly)
-    console.log(`🌐 Executing web task ${taskType} with ${steps.length} steps`);
+    console.log(`🌐 Executing Playwright web task: ${taskType}`);
     
-    // Execute each step using TaskOrchestrator's step execution
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i];
-      console.log(`📋 Executing step ${i + 1}/${steps.length}: ${step.description}`);
-      
-      // Use TaskOrchestrator's executeIterationStep method for proper handling
-      const result = await taskOrchestrator.executeIterationStep(step);
-      
-      if (!result.success) {
-        console.error(`❌ Step ${i + 1} failed:`, result.error);
-        return {
-          success: false,
-          stepNumber: i + 1,
-          totalSteps: steps.length,
-          error: result.error
-        };
-      } else {
-        console.log(`✅ Step ${i + 1} completed successfully`);
-      }
-
-      // Wait between steps
-      if (i < steps.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, step.delayAfter || 1000));
-      }
+    // Use Playwright for web-related tasks
+    const result = await playwrightService.executeWebTask(taskType, params);
+    
+    if (result.success) {
+      console.log(`✅ Playwright task ${taskType} completed successfully`);
+      return result;
+    } else {
+      console.error(`❌ Playwright task ${taskType} failed:`, result.error);
+      return result;
     }
-
-    console.log(`🎉 Web task ${taskType} completed successfully`);
-    return { success: true, message: "Web task completed successfully" };
   } catch (error) {
-    console.error("Web task execution error:", error);
+    console.error("Playwright web task execution error:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Additional Playwright-specific handlers
+ipcMain.handle("playwright-download-file", async (event, url, filename) => {
+  try {
+    console.log(`📥 Playwright download: ${url}`);
+    return await playwrightService.downloadFile(url, filename);
+  } catch (error) {
+    console.error("Playwright download error:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("playwright-navigate", async (event, url) => {
+  try {
+    console.log(`🌐 Playwright navigate: ${url}`);
+    return await playwrightService.navigateToUrl(url);
+  } catch (error) {
+    console.error("Playwright navigation error:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("playwright-search-google", async (event, query) => {
+  try {
+    console.log(`🔍 Playwright Google search: ${query}`);
+    return await playwrightService.searchGoogle(query);
+  } catch (error) {
+    console.error("Playwright search error:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("playwright-screenshot", async (event, filename) => {
+  try {
+    console.log(`📷 Playwright screenshot`);
+    return await playwrightService.takeScreenshot(filename);
+  } catch (error) {
+    console.error("Playwright screenshot error:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("playwright-get-downloads", async (event) => {
+  try {
+    const files = playwrightService.getDownloadedFiles();
+    return { success: true, files };
+  } catch (error) {
+    console.error("Error getting downloads:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("playwright-close", async (event) => {
+  try {
+    await playwrightService.close();
+    return { success: true };
+  } catch (error) {
+    console.error("Error closing Playwright:", error);
     return { success: false, error: error.message };
   }
 });
@@ -1178,179 +1403,60 @@ function notifyVisualFallbackResult(success, action, error) {
 }
 
 function notifyScreenshotCapture(status, data) {
-  mainWindow.webContents.send("screenshot-capture", { status, data });
-  if (overlayWindow) {
-    overlayWindow.webContents.send("screenshot-capture", { status, data });
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("screenshot-capture", { status, data });
+    }
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send("screenshot-capture", { status, data });
+    }
+  } catch (error) {
+    console.log(`⚠️ Error sending screenshot capture notification: ${error.message}`);
   }
 }
 
-function notifyClaudeAnalysis(status, data) {
-  mainWindow.webContents.send("claude-analysis", { status, data });
-  if (overlayWindow) {
-    overlayWindow.webContents.send("claude-analysis", { status, data });
+function notifyAIAnalysis(status, data) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("ai-analysis", { status, data });
+    }
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send("ai-analysis", { status, data });
+    }
+  } catch (error) {
+    console.log(`⚠️ Error sending AI analysis notification: ${error.message}`);
   }
 }
 
 function notifyCloudUpload(status, data) {
-  mainWindow.webContents.send("cloud-upload", { status, data });
-  if (overlayWindow) {
-    overlayWindow.webContents.send("cloud-upload", { status, data });
-  }
-}
-
-// Onboarding System Functions
-function shouldShowOnboarding() {
   try {
-    const preferencesPath = path.join(__dirname, 'user-preferences.json');
-    if (fs.existsSync(preferencesPath)) {
-      const preferences = JSON.parse(fs.readFileSync(preferencesPath, 'utf8'));
-      return !preferences.onboardingCompleted;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("cloud-upload", { status, data });
+    }
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send("cloud-upload", { status, data });
     }
   } catch (error) {
-    console.error('Error checking onboarding status:', error);
+    console.log(`⚠️ Error sending cloud upload notification: ${error.message}`);
   }
-  return true; // Show onboarding by default
 }
 
-function createOnboardingWindow() {
-  onboardingWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-    },
-    titleBarStyle: 'hiddenInset',
-    show: true,
-    center: true
-  });
-
-  onboardingWindow.loadFile('onboarding.html');
-  
-  onboardingWindow.on('closed', () => {
-    onboardingWindow = null;
-  });
-}
-
-function startMainApp() {
-  createWindow();
-  createOverlayWindow();
-  createTray();
-  
-  // Wait a bit then start Deepgram
-  setTimeout(() => {
-    startDeepgramConnection();
-  }, 3000);
-}
-
-// IPC Handlers for Onboarding
-ipcMain.handle('check-permissions', async () => {
-  const permissions = {
-    microphone: await systemPreferences.getMediaAccessStatus('microphone') === 'granted',
-    accessibility: systemPreferences.isTrustedAccessibilityClient(false),
-    screen: await systemPreferences.getMediaAccessStatus('screen') === 'granted'
-  };
-  return permissions;
-});
-
-ipcMain.handle('request-microphone-permission', async () => {
-  try {
-    const status = await systemPreferences.askForMediaAccess('microphone');
-    return status;
-  } catch (error) {
-    console.error('Error requesting microphone permission:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('open-accessibility-settings', async () => {
-  // Open System Preferences to Accessibility
-  exec('open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"');
-  return true;
-});
-
-ipcMain.handle('open-screen-recording-settings', async () => {
-  // Open System Preferences to Screen Recording
-  exec('open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"');
-  return true;
-});
-
-ipcMain.handle('save-onboarding-preferences', async (event, preferences) => {
-  try {
-    const preferencesPath = path.join(__dirname, 'user-preferences.json');
-    fs.writeFileSync(preferencesPath, JSON.stringify(preferences, null, 2));
-    userPreferences = preferences;
-    console.log('✅ Onboarding preferences saved');
-    return { success: true };
-  } catch (error) {
-    console.error('Error saving preferences:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('launch-main-app', async () => {
-  if (onboardingWindow) {
-    onboardingWindow.close();
-  }
-  startMainApp();
-  return true;
-});
-
-ipcMain.handle('start-tutorial-listening', async () => {
-  // Start listening for tutorial commands
-  if (deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
-    return { success: true };
-  } else {
-    await startDeepgramConnection();
-    return { success: true };
-  }
-});
-
-ipcMain.handle('execute-tutorial-command', async (event, command) => {
-  try {
-    if (taskOrchestrator) {
-      const result = await taskOrchestrator.executeTaskDirectly(command);
-      return result;
-    } else {
-      throw new Error('Task orchestrator not initialized');
-    }
-  } catch (error) {
-    console.error('Tutorial command error:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Comprehensive Testing System
-ipcMain.handle('run-comprehensive-tests', async () => {
-  if (comprehensiveTestSuite) {
-    console.log('🧪 Starting comprehensive test suite...');
-    await comprehensiveTestSuite.runAllTests();
-    return { success: true, message: 'Test suite completed' };
-  }
-  return { success: false, error: 'Test suite not initialized' };
-});
-
-ipcMain.handle('run-test-category', async (event, category) => {
-  if (comprehensiveTestSuite) {
-    console.log(`🧪 Running ${category} tests...`);
-    await comprehensiveTestSuite.runCategory(category);
-    return { success: true, message: `${category} tests completed` };
-  }
-  return { success: false, error: 'Test suite not initialized' };
-});
-
-ipcMain.handle('get-test-results', async () => {
-  if (comprehensiveTestSuite) {
-    return {
-      success: true,
-      results: comprehensiveTestSuite.results,
-      summary: {
-        total: comprehensiveTestSuite.totalTests,
-        passed: comprehensiveTestSuite.passedTests.length,
-        failed: comprehensiveTestSuite.failedTests.length,
-        skipped: comprehensiveTestSuite.skippedTests.length
+// Handle testing commands via stdin for automated testing
+process.stdin.on('data', (data) => {
+  const input = data.toString().trim();
+  if (input.startsWith('TEST_COMMAND:')) {
+    const command = input.replace('TEST_COMMAND:', '');
+    console.log(`🧪 Test command received: ${command}`);
+    
+    // Execute the command using the same handler as manual commands
+    taskOrchestrator.executeTask(command).then((result) => {
+      if (result && result.success) {
+        console.log(`✅ TEST_COMMAND_COMPLETED: ${command}`);
+      } else {
+        console.log(`❌ TEST_COMMAND_FAILED: ${command} - ${result?.error || 'Unknown error'}`);
       }
-    };
+    }).catch((error) => {
+      console.log(`❌ TEST_COMMAND_FAILED: ${command} - ${error.message}`);
+    });
   }
-  return { success: false, error: 'Test suite not initialized' };
 });
