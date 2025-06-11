@@ -1,6 +1,46 @@
 // Voice Command Runner - Simplified for automatic voice processing
 const { ipcRenderer } = require("electron");
 
+// Fallback for window.electronAPI when preload is unavailable
+if (!window.electronAPI) {
+  window.electronAPI = {
+    // Voice and audio
+    sendAudio: (data) => ipcRenderer.send("audio-data", data),
+    // Deepgram
+    startDeepgram: () => ipcRenderer.invoke("start-deepgram"),
+    stopDeepgram: () => ipcRenderer.invoke("stop-deepgram"),
+    // Command execution
+    executeCommand: (t, h) => ipcRenderer.invoke("execute-command", t, h),
+    executeDynamicTask: (d) => ipcRenderer.invoke("execute-dynamic-task", d),
+    executeWebTask: (type, p) => ipcRenderer.invoke("execute-web-task", type, p),
+    stopTask: () => ipcRenderer.invoke("stop-task"),
+    // Model configuration
+    getAvailableModels: () => ipcRenderer.invoke("get-available-models"),
+    getModelConfig: () => ipcRenderer.invoke("get-model-config"),
+    setTextModel: (prov, model) => ipcRenderer.invoke("set-text-model", prov, model),
+    setImageModel: (prov, model) => ipcRenderer.invoke("set-image-model", prov, model),
+    testAllModels: () => ipcRenderer.invoke("test-all-models"),
+    // System prompt
+    getSystemPrompt: () => ipcRenderer.invoke("get-system-prompt"),
+    updateSystemPrompt: (p) => ipcRenderer.invoke("update-system-prompt", p),
+    // Event listeners
+    onInitEnv: (cb) => ipcRenderer.on("init-env", cb),
+    onDeepgramReady: (cb) => ipcRenderer.on("deepgram-ready", cb),
+    onDeepgramClosed: (cb) => ipcRenderer.on("deepgram-closed", cb),
+    onDeepgramError: (cb) => ipcRenderer.on("deepgram-error", cb),
+    onDeepgramReconnected: (cb) => ipcRenderer.on("deepgram-reconnected", cb),
+    onDeepgramTranscript: (cb) => ipcRenderer.on("deepgram-transcript", cb),
+    // Task events
+    onTaskStepComplete: (cb) => ipcRenderer.on("task-step-complete", cb),
+    onTaskComplete: (cb) => ipcRenderer.on("task-complete", cb),
+    onTaskError: (cb) => ipcRenderer.on("task-error", cb),
+    // Command events
+    onCommandProcessing: (cmd) => ipcRenderer.send("command-processing", cmd),
+    onCommandSuccess: (cmd) => ipcRenderer.send("command-success", cmd),
+    onCommandError: (cmd, err) => ipcRenderer.send("command-error", cmd, err),
+  };
+}
+
 // Wait for DOM to be fully loaded
 document.addEventListener("DOMContentLoaded", () => {
   // DOM elements - updated to match the new HTML IDs
@@ -98,8 +138,8 @@ document.addEventListener("DOMContentLoaded", () => {
         updateTaskIndicator("processing");
         
         try {
-          const success = await executeCommand("play porcupine tree songs on youtube");
-          if (success) {
+          const result = await window.electronAPI.executeCommand("play porcupine tree songs on youtube");
+          if (result.success) {
             addLogEntry("✅ YouTube test completed successfully!", "success");
             updateTaskStatus("Completed");
             updateTaskIndicator("connected");
@@ -124,7 +164,7 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("❌ YouTube test button not found!");
     }
 
-        if (testMicBtn) {
+    if (testMicBtn) {
       console.log("✅ Attaching microphone test button listener");
       testMicBtn.addEventListener("click", async (e) => {
         console.log("🎤 Microphone test button clicked!");
@@ -184,134 +224,76 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("❌ Microphone test button not found!");
     }
 
-  if (testMicBtn) {
-    testMicBtn.addEventListener("click", async () => {
-      addLogEntry("🎤 Testing microphone...", "info");
-      updateRecordingStatus("Testing");
-      updateRecordingIndicator("processing");
-      
-      try {
-        // Test microphone access
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        addLogEntry("✅ Microphone access granted", "success");
+    if (clearLogBtn) {
+      console.log("✅ Attaching clear log button listener");
+      clearLogBtn.addEventListener("click", () => {
+        logContainer.innerHTML = '';
+        addLogEntry("🗑️ Log cleared", "info");
+        addLogEntry("✅ Voice Assistant ready", "success");
+        addLogEntry("🎤 Listening for commands...", "primary");
+      });
+    }
+
+    if (settingsBtn) {
+      console.log("✅ Attaching settings button listener");
+      settingsBtn.addEventListener("click", () => {
+        console.log("⚙️ Settings button clicked!");
+        addLogEntry("⚙️ Opening settings...", "info");
+        settingsModal.classList.add("active");
+      });
+    } else {
+      console.log("❌ Settings button not found!");
+    }
+
+    if (runTestSuiteBtn) {
+      console.log("✅ Attaching test suite button listener");
+      runTestSuiteBtn.addEventListener("click", async (e) => {
+        console.log("🧪 Test suite button clicked!");
+        e.preventDefault();
+        addLogEntry("🧪 Starting comprehensive test suite...", "info");
+        updateTaskStatus("Testing");
+        updateTaskIndicator("processing");
         
-        // Test audio levels for 3 seconds
-        const audioContext = new AudioContext();
-        const source = audioContext.createMediaStreamSource(stream);
-        const analyser = audioContext.createAnalyser();
-        source.connect(analyser);
-        
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        let testCount = 0;
-        const maxTests = 30; // 3 seconds at ~100ms intervals
-        
-        const testInterval = setInterval(() => {
-          analyser.getByteFrequencyData(dataArray);
-          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-          
-          if (average > 10) {
-            addLogEntry(`🔊 Audio detected (level: ${Math.round(average)})`, "success");
+        try {
+          const result = await window.electronAPI.runComprehensiveTests();
+          if (result.success) {
+            addLogEntry("✅ Test suite completed successfully!", "success");
+            updateTaskStatus("Completed");
+            updateTaskIndicator("connected");
+          } else {
+            addLogEntry("❌ Test suite failed: " + result.error, "error");
+            updateTaskStatus("Failed");
+            updateTaskIndicator("disconnected");
           }
-          
-          testCount++;
-          if (testCount >= maxTests) {
-            clearInterval(testInterval);
-            stream.getTracks().forEach(track => track.stop());
-            audioContext.close();
-            
-            addLogEntry("✅ Microphone test completed", "success");
-            updateRecordingStatus("Ready");
-            updateRecordingIndicator("ready");
-          }
-        }, 100);
-        
-      } catch (error) {
-        addLogEntry("❌ Microphone test failed: " + error.message, "error");
-        updateRecordingStatus("Error");
-        updateRecordingIndicator("disconnected");
+        } catch (error) {
+          addLogEntry("❌ Test suite error: " + error.message, "error");
+          updateTaskStatus("Error");
+          updateTaskIndicator("disconnected");
+        }
         
         // Reset status after 3 seconds
         setTimeout(() => {
-          updateRecordingStatus("Ready");
-          updateRecordingIndicator("ready");
+          updateTaskStatus("Ready");
+          updateTaskIndicator("ready");
         }, 3000);
-      }
-    });
-  } else {
-    console.log("❌ Microphone test button not found!");
-  }
+      });
+    } else {
+      console.log("❌ Test suite button not found!");
+    }
 
-  if (clearLogBtn) {
-    console.log("✅ Attaching clear log button listener");
-    clearLogBtn.addEventListener("click", () => {
-      logContainer.innerHTML = '';
-      addLogEntry("🗑️ Log cleared", "info");
-      addLogEntry("✅ Voice Assistant ready", "success");
-      addLogEntry("🎤 Listening for commands...", "primary");
-    });
-  }
-
-  if (settingsBtn) {
-    console.log("✅ Attaching settings button listener");
-    settingsBtn.addEventListener("click", () => {
-      console.log("⚙️ Settings button clicked!");
-      addLogEntry("⚙️ Opening settings...", "info");
-      // You can implement a settings modal here
-      alert("Settings panel coming soon! Current features:\n\n• Voice Recognition: Deepgram API\n• AI Processing: Multiple providers\n• Task Automation: AppleScript & Shell\n• Visual Guidance: Screenshot analysis");
-    });
-  } else {
-    console.log("❌ Settings button not found!");
-  }
-
-  if (runTestSuiteBtn) {
-    console.log("✅ Attaching test suite button listener");
-    runTestSuiteBtn.addEventListener("click", async (e) => {
-      console.log("🧪 Test suite button clicked!");
-      e.preventDefault();
-      addLogEntry("🧪 Starting comprehensive test suite...", "info");
-      updateTaskStatus("Testing");
-      updateTaskIndicator("processing");
-      
-      try {
-        const result = await ipcRenderer.invoke('run-comprehensive-tests');
-        if (result.success) {
-          addLogEntry("✅ Test suite completed successfully!", "success");
-          updateTaskStatus("Completed");
-          updateTaskIndicator("connected");
-        } else {
-          addLogEntry("❌ Test suite failed: " + result.error, "error");
-          updateTaskStatus("Failed");
-          updateTaskIndicator("disconnected");
-        }
-      } catch (error) {
-        addLogEntry("❌ Test suite error: " + error.message, "error");
-        updateTaskStatus("Error");
-        updateTaskIndicator("disconnected");
-      }
-      
-      // Reset status after 3 seconds
-      setTimeout(() => {
-        updateTaskStatus("Ready");
-        updateTaskIndicator("ready");
-      }, 3000);
-    });
-  } else {
-    console.log("❌ Test suite button not found!");
-  }
-
-  if (helpBtn) {
-    console.log("✅ Attaching help button listener");
-    helpBtn.addEventListener("click", (e) => {
-      console.log("❓ Help button clicked!");
-      e.preventDefault();
-      showHelpModal();
-    });
-  } else {
-    console.log("❌ Help button not found!");
-  }
+    if (helpBtn) {
+      console.log("✅ Attaching help button listener");
+      helpBtn.addEventListener("click", (e) => {
+        console.log("❓ Help button clicked!");
+        e.preventDefault();
+        showHelpModal();
+      });
+    } else {
+      console.log("❌ Help button not found!");
+    }
   
-  console.log("✅ All event listeners attached!");
-}
+    console.log("✅ All event listeners attached!");
+  }
 
   // Help Modal Function
   function showHelpModal() {
@@ -555,14 +537,14 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
   async function loadModelConfiguration() {
     try {
       // Get available models
-      const modelsResult = await ipcRenderer.invoke("get-available-models");
+      const modelsResult = await window.electronAPI.getAvailableModels();
       if (modelsResult.success) {
         availableModels = modelsResult.models;
         console.log("🤖 Available models loaded:", availableModels);
       }
 
       // Get current model configuration
-      const configResult = await ipcRenderer.invoke("get-model-config");
+      const configResult = await window.electronAPI.getModelConfig();
       if (configResult.success) {
         currentConfig = {
           textModel: configResult.textModel,
@@ -602,7 +584,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
         const model = textModelSelect.value;
         if (provider && model) {
           try {
-            await ipcRenderer.invoke("set-text-model", provider, model);
+            await window.electronAPI.setTextModel(provider, model);
             addLogEntry(`✅ Text model set to ${provider}/${model}`, "success");
           } catch (error) {
             addLogEntry(`❌ Failed to set text model: ${error.message}`, "error");
@@ -618,7 +600,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
         const model = imageModelSelect.value;
         if (provider && model) {
           try {
-            await ipcRenderer.invoke("set-image-model", provider, model);
+            await window.electronAPI.setImageModel(provider, model);
             addLogEntry(`✅ Image model set to ${provider}/${model}`, "success");
           } catch (error) {
             addLogEntry(`❌ Failed to set image model: ${error.message}`, "error");
@@ -688,7 +670,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
     testResults.innerHTML = "<div style='text-align: center; padding: 20px;'>🔄 Testing models, please wait...</div>";
 
     try {
-      const result = await ipcRenderer.invoke("test-all-models");
+      const result = await window.electronAPI.testAllModels();
       
       if (result.success) {
         displayTestResults(result.results);
@@ -735,7 +717,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
   settingsBtn.addEventListener("click", async () => {
     try {
       // Load system prompt
-      const result = await ipcRenderer.invoke("get-system-prompt");
+      const result = await window.electronAPI.getSystemPrompt();
       if (result.success) {
         systemPromptTextarea.value = result.prompt;
       } else {
@@ -792,7 +774,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       saveSystemPrompt(newPrompt);
       
       // Notify the main process about the updated prompt
-      await ipcRenderer.invoke("update-system-prompt", newPrompt);
+      await window.electronAPI.updateSystemPrompt(newPrompt);
       
       addLogEntry("✅ System prompt saved successfully!", "success");
       closeModal();
@@ -1005,7 +987,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       const timeSinceLastSend = now - (lastAudioTime || 0);
       
       if (hasAudio || timeSinceLastSend > 500) { // Send audio or heartbeat every 500ms
-      ipcRenderer.send("audio-data", int16Data.buffer);
+      window.electronAPI.sendAudio(int16Data.buffer);
       lastAudioTime = now;
         
         // Enhanced debugging
@@ -1066,7 +1048,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
         
         // Cancel the current task
         try {
-          await ipcRenderer.invoke("stop-task");
+          await window.electronAPI.stopTask();
           addLogEntry("🛑 Current task cancelled");
         } catch (error) {
           console.error("Error stopping current task:", error);
@@ -1083,7 +1065,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       addLogEntry(`🔄 Processing command: "${currentTranscript}"`);
       
       // Notify overlay about processing
-      ipcRenderer.send("command-processing", currentTranscript);
+      window.electronAPI.onCommandProcessing(currentTranscript);
       
       // Show processing status
       updateTranscriptionStatus('processing');
@@ -1096,19 +1078,19 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       const commandToExecute = currentTranscript.trim();
       addLogEntry(`🤖 Executing: "${commandToExecute}"`);
       
-      const success = await executeCommand(commandToExecute);
+      const result = await executeCommand(commandToExecute);
       
-      console.log("📊 Execution result:", success ? "SUCCESS" : "FAILED");
+      console.log("📊 Execution result:", result.success ? "SUCCESS" : "FAILED");
       
       // Notify overlay about result
-      if (success) {
-        ipcRenderer.send("command-success", commandToExecute);
+      if (result.success) {
+        window.electronAPI.onCommandSuccess(commandToExecute);
       } else {
-        ipcRenderer.send("command-error", commandToExecute, "Execution failed");
+        window.electronAPI.onCommandError(commandToExecute, result.error);
       }
       
       // Show result status
-      if (success) {
+      if (result.success) {
         updateTranscriptionStatus('success');
         setTimeout(() => {
           updateTranscriptionStatus('ready');
@@ -1123,11 +1105,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       // Clear the current transcript for next command
       currentTranscript = "";
       
-      // Clear the transcript display after showing result
-      setTimeout(() => {
-        const transcriptEl = document.getElementById("transcript");
-        transcriptEl.textContent = "🎤 Ready for your next command...";
-      }, success ? 2000 : 3000);
+      // Keep transcript for continuous chat; no clearing here
 
       // Re-enable the start button and continue listening
       setTimeout(() => {
@@ -1142,7 +1120,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       addLogEntry(`❌ Processing error: ${error.message}`, "error");
       
       // Notify overlay about error
-      ipcRenderer.send("command-error", currentTranscript, error.message);
+      window.electronAPI.onCommandError(currentTranscript, error.message);
       
       updateTranscriptionStatus('error');
       isProcessingCommand = false;
@@ -1171,7 +1149,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       updateTranscriptionStatus('processing');
 
       // Stop recording temporarily
-      await ipcRenderer.invoke("stop-deepgram");
+      await window.electronAPI.stopDeepgram();
       isRecording = false;
       startBtn.textContent = "Processing...";
       startBtn.disabled = true;
@@ -1184,12 +1162,12 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       // Add a small delay to ensure UI updates
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      const success = await executeCommand(commandToExecute);
+      const result = await executeCommand(commandToExecute);
       
-      console.log("📊 Execution result:", success ? "SUCCESS" : "FAILED");
+      console.log("📊 Execution result:", result.success ? "SUCCESS" : "FAILED");
       
       // Show result status
-      if (success) {
+      if (result.success) {
         updateTranscriptionStatus('success');
         setTimeout(() => {
           updateTranscriptionStatus('ready');
@@ -1209,7 +1187,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       addLogEntry("🔄 Restarting recording...");
       setTimeout(async () => {
         try {
-          const success = await ipcRenderer.invoke("start-deepgram");
+          const success = await window.electronAPI.startDeepgram();
           if (success) {
             isRecording = true;
             isProcessingCommand = false;
@@ -1241,7 +1219,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
   }
 
   // Set up environment variables
-  ipcRenderer.on("init-env", (event, env) => {
+  window.electronAPI.onInitEnv((event, env) => {
     if (!env.DEEPGRAM_API_KEY) {
       addLogEntry("⚠️ Warning: Deepgram API key not set", "warning");
     }
@@ -1251,12 +1229,12 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
   });
 
   // Handle Deepgram events
-  ipcRenderer.on("deepgram-ready", () => {
+  window.electronAPI.onDeepgramReady(() => {
     updateConnectionStatus("connected");
     addLogEntry("🎤 Voice recognition ready", "success");
   });
 
-  ipcRenderer.on("deepgram-closed", (event, data) => {
+  window.electronAPI.onDeepgramClosed((event, data) => {
     updateConnectionStatus("disconnected");
     const { code, reason } = data;
     if (code === 1000 || code === 1001) {
@@ -1266,7 +1244,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
     }
   });
 
-  ipcRenderer.on("deepgram-error", (event, errorMessage) => {
+  window.electronAPI.onDeepgramError((event, errorMessage) => {
     updateConnectionStatus("error");
     if (errorMessage.includes("Rate limited")) {
       addLogEntry("⚠️ Voice service rate limited - retrying with delay", "warning");
@@ -1275,12 +1253,12 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
     }
   });
 
-  ipcRenderer.on("deepgram-reconnected", () => {
+  window.electronAPI.onDeepgramReconnected(() => {
     updateConnectionStatus("connected");
     addLogEntry("🔄 Voice recognition reconnected", "success");
   });
 
-  ipcRenderer.on("deepgram-transcript", (event, data) => {
+  window.electronAPI.onDeepgramTranscript((event, data) => {
     try {
       console.log("Received Deepgram data:", data);
       
@@ -1405,7 +1383,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       addLogEntry("🎤 Starting continuous recording...");
       console.log("🎤 Attempting to start Deepgram connection for continuous listening");
       
-      const success = await ipcRenderer.invoke("start-deepgram");
+      const success = await window.electronAPI.startDeepgram();
       
       console.log("Deepgram start result:", success);
       
@@ -1477,14 +1455,14 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       
       // Temporarily stop recording to avoid conflicts
       if (isRecording) {
-        await ipcRenderer.invoke("stop-deepgram");
+        await window.electronAPI.stopDeepgram();
         isRecording = false;
-        startBtn.textContent = "🎤 Start Listening";
+        startBtn.textContent = "⏹️ Stop Listening";
       }
       
-      const success = await executeCommand(currentTranscript);
+      const result = await executeCommand(currentTranscript);
       
-      if (success) {
+      if (result.success) {
         updateTranscriptionStatus('success');
       } else {
         updateTranscriptionStatus('error');
@@ -1528,7 +1506,7 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
         heartbeatInterval = null;
       }
 
-      await ipcRenderer.invoke("stop-deepgram");
+      await window.electronAPI.stopDeepgram();
 
       if (audioProcessor) {
         audioProcessor.disconnect();
@@ -1595,21 +1573,21 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
 
       // Use the new dynamic task execution system
       addLogEntry("🤖 Analyzing task and breaking into steps...");
-      const result = await ipcRenderer.invoke("execute-dynamic-task", text);
+      const result = await window.electronAPI.executeDynamicTask(text);
       
       console.log("Dynamic Task Result:", result);
 
       if (!result.success) {
         addLogEntry(`❌ Task Error: ${result.error}`, "error");
-        return false;
+        return result;
       }
 
       addLogEntry(`✅ Task completed successfully!`, "success");
-      return true;
+      return result;
     } catch (error) {
       console.error("Task execution error:", error);
       addLogEntry(`❌ Execution error: ${error.message}`, "error");
-      return false;
+      return { success: false, error: error.message };
     }
   }
 
@@ -1632,41 +1610,31 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
   // Handle stop/cancel commands
   async function handleStopCommand(text) {
     try {
-      addLogEntry(`🛑 Stop command detected: "${text}"`);
+      addLogEntry(`🛑 Stop command received. Stopping all tasks...`);
       
       // Stop any ongoing task execution
-      const stopResult = await ipcRenderer.invoke("stop-task");
+      const stopResult = await window.electronAPI.stopTask();
       
       if (stopResult.success) {
-        if (stopResult.wasCancelled) {
-          addLogEntry(`🛑 Cancelled task: "${stopResult.cancelledTask}"`, "success");
-          addLogEntry("🎤 Ready for your next command", "success");
-        } else {
-          addLogEntry("🛑 No active tasks to cancel", "warning");
-          addLogEntry("🎤 Ready for your next command", "success");
-        }
+        addLogEntry("✅ All tasks stopped successfully");
         
         // Notify overlay about cancellation
-        ipcRenderer.send("command-success", text);
+        window.electronAPI.onCommandSuccess(text);
         
         // Reset UI state
-        isProcessingCommand = false;
-        currentTranscript = "";
-        
-        // Update transcript display
         const transcriptEl = document.getElementById("transcript");
         transcriptEl.textContent = "🎤 Ready for your next command...";
         
-        return true;
+        return { success: true, message: "Task cancelled" };
       } else {
         addLogEntry("❌ Failed to stop tasks", "error");
-        return false;
+        return { success: false, error: "Failed to stop tasks" };
       }
       
     } catch (error) {
       console.error("Error handling stop command:", error);
       addLogEntry(`❌ Error stopping tasks: ${error.message}`, "error");
-      return false;
+      return { success: false, error: error.message };
     }
   }
 
@@ -1708,24 +1676,24 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
 
       if (taskType) {
         addLogEntry(`🌐 Executing web task: ${taskType} with ${JSON.stringify(params)}`);
-        const result = await ipcRenderer.invoke("execute-web-task", taskType, params);
+        const result = await window.electronAPI.executeWebTask(taskType, params);
         
         if (!result.success) {
           addLogEntry(`❌ Web task failed: ${result.error}`, "error");
-          return false;
+          return result;
         }
 
         addLogEntry(`✅ Web task completed successfully!`, "success");
-        return true;
+        return result;
       }
     } catch (error) {
       console.error("Web task execution error:", error);
       addLogEntry(`❌ Web task error: ${error.message}`, "error");
-      return false;
+      return { success: false, error: error.message };
     }
 
     // Fallback to regular dynamic task execution
-    return false;
+    return { success: false, error: "No valid web task found" };
   }
 
   // Update wave animation with actual audio level
@@ -1848,123 +1816,110 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
   }, 1000); // Small delay to ensure everything is loaded
 
   // Event listeners for task orchestrator
-  ipcRenderer.on("task-step-complete", (event, data) => {
+  window.electronAPI.onTaskStepComplete((event, data) => {
     const { stepNumber, totalSteps, description } = data;
     addLogEntry(`📋 Step ${stepNumber}/${totalSteps}: ${description}`);
   });
 
-  ipcRenderer.on("task-complete", (event, data) => {
+  window.electronAPI.onTaskComplete((event, data) => {
     const { success, message } = data;
     if (success) {
-      addLogEntry(`🎉 Task completed: ${message}`, "success");
+      addLogEntry(`✅ Task finished: ${message}`, "success");
     } else {
       addLogEntry(`❌ Task failed: ${message}`, "error");
     }
   });
 
-  ipcRenderer.on("task-error", (event, data) => {
+  window.electronAPI.onTaskError((event, data) => {
     const { error, stepNumber, totalSteps } = data;
     addLogEntry(`⚠️ Error at step ${stepNumber}/${totalSteps}: ${error}`, "error");
   });
 
   // Enhanced visual guidance event listeners
-  ipcRenderer.on("visual-guidance-start", (event, data) => {
+  window.electronAPI.onVisualGuidanceStart((event, data) => {
     const { stepDescription } = data;
     addLogEntry(`🔍 Taking screenshot for: ${stepDescription}`);
   });
 
-  ipcRenderer.on("visual-guidance-screenshot", (event, data) => {
+  window.electronAPI.onVisualGuidanceScreenshot((event, data) => {
     const { screenshotPath } = data;
     addLogEntry(`📷 Screenshot captured and analyzing...`);
   });
 
-  ipcRenderer.on("visual-guidance-action", (event, data) => {
+  window.electronAPI.onVisualGuidanceAction((event, data) => {
     const { action, confidence } = data;
     addLogEntry(`🎯 AI suggested: ${action} (confidence: ${confidence})`);
   });
 
-  ipcRenderer.on("visual-guidance-complete", (event, data) => {
+  window.electronAPI.onVisualGuidanceComplete((event, data) => {
     const { success, action, error } = data;
     if (success) {
-      addLogEntry(`✅ Visual action completed: ${action}`, "success");
+      addLogEntry(`✅ Visual guidance succeeded: ${action}`, "success");
     } else {
-      addLogEntry(`❌ Visual action failed: ${error}`, "error");
+      addLogEntry(`❌ Visual guidance failed: ${error}`, "error");
     }
   });
 
   // New event listeners for screenshot analysis fallback
-  ipcRenderer.on("screenshot-analysis-start", (event, data) => {
+  window.electronAPI.onScreenshotAnalysisStart((event, data) => {
     const { failedStep } = data;
     addLogEntry(`📷 AppleScript failed - taking screenshot to analyze what went wrong...`);
   });
 
   // Listen for screenshot capture events
-  ipcRenderer.on("screenshot-capture", (event, data) => {
+  window.electronAPI.onScreenshotCapture((event, data) => {
     const { status, data: captureData } = data;
     
-    switch(status) {
-      case 'start':
-        addLogEntry(`📷 Capturing screenshot for analysis...`);
-        break;
-      case 'success':
-        addLogEntry(`📷 Screenshot captured successfully`, "success");
-        break;
-      case 'failed':
-        addLogEntry(`❌ Screenshot capture failed: ${captureData}`, "error");
-        break;
+    if (status === 'started') {
+      addLogEntry(`📷 Capturing screenshot...`);
+    } else if (status === 'success') {
+      addLogEntry(`✅ Screenshot captured: ${captureData.path}`);
+    } else {
+      addLogEntry(`❌ Screenshot failed: ${captureData.error}`, "error");
     }
   });
 
   // Listen for Claude analysis events
-  ipcRenderer.on("claude-analysis", (event, data) => {
+  window.electronAPI.onClaudeAnalysis((event, data) => {
     const { status, data: analysisData } = data;
     
-    switch(status) {
-      case 'start':
-        addLogEntry(`🧠 Sending screenshot to Claude for analysis...`);
-        break;
-      case 'success':
-        addLogEntry(`🧠 Claude analysis complete - attempting suggested fix...`, "success");
-        break;
-      case 'failed':
-        addLogEntry(`❌ Claude analysis failed: ${analysisData}`, "error");
-        break;
+    if (status === 'started') {
+      addLogEntry(`🤖 Analyzing screenshot with AI...`);
+    } else if (status === 'success') {
+      addLogEntry(`✅ AI analysis complete: ${analysisData.result}`);
+    } else {
+      addLogEntry(`❌ AI analysis failed: ${analysisData.error}`, "error");
     }
   });
 
   // Listen for cloud upload events
-  ipcRenderer.on("cloud-upload", (event, data) => {
+  window.electronAPI.onCloudUpload((event, data) => {
     const { status, data: uploadData } = data;
     
-    switch(status) {
-      case 'start':
-        addLogEntry(`☁️ Uploading screenshot to cloud for optimization...`);
-        break;
-      case 'success':
-        addLogEntry(`☁️ Screenshot uploaded successfully to CDN`, "success");
-        break;
-      case 'failed':
-        addLogEntry(`⚠️ Cloud upload failed: ${uploadData} - falling back to base64`, "warning");
-        break;
+    if (status === 'started') {
+      addLogEntry(`☁️ Uploading for analysis...`);
+    } else if (status === 'success') {
+      addLogEntry(`✅ Uploaded successfully: ${uploadData.url}`);
+    } else {
+      addLogEntry(`❌ Upload failed: ${uploadData.error}`, "error");
     }
   });
 
-  ipcRenderer.on("screenshot-analysis-complete", (event, data) => {
+  window.electronAPI.onScreenshotAnalysisComplete((event, data) => {
     const { success, suggestedAction, failureReason } = data;
     if (success && suggestedAction) {
-      addLogEntry(`🧠 Screenshot analysis completed successfully`, "success");
-      addLogEntry(`🎯 Suggested action: ${suggestedAction}`, "info");
-    } else {
-      addLogEntry(`❌ Screenshot analysis failed: ${failureReason || 'Unknown error'}`, "error");
+      addLogEntry(`🧠 AI Suggestion: "${suggestedAction}"`, "info");
+    } else if (!success) {
+      addLogEntry(`🤔 AI could not determine a fix. Reason: ${failureReason}`, "warning");
     }
   });
 
-  ipcRenderer.on("visual-fallback-success", (event, data) => {
+  window.electronAPI.onVisualFallbackSuccess((event, data) => {
     const { action } = data;
     addLogEntry(`🎯 Visual fallback succeeded: ${action}`, "success");
   });
 
-  ipcRenderer.on("visual-fallback-failed", (event, data) => {
+  window.electronAPI.onVisualFallbackFailed((event, data) => {
     const { error } = data;
     addLogEntry(`❌ Visual fallback also failed: ${error}`, "error");
   });

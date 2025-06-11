@@ -1,0 +1,91 @@
+:root {
+  /* Palette */
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #21262d;
+  --bg-hover: #30363d;
+  --border-color: #30363d;
+  --border-muted: #21262d;
+
+  --text-primary: #f0f6fc;
+  --text-secondary: #7d8590;
+  --text-muted: #6e7681;
+
+  --accent-purple: #8b5cf6;
+  --accent-purple-hover: #a78bfa;
+  --accent-green: #238636;
+  --accent-green-hover: #2ea043;
+  --accent-red: #da3633;
+  --accent-red-hover: #f85149;
+  --accent-blue: #0969da;
+  --accent-orange: #fb8500;
+
+  /* Surfaces */
+  --radius-small: 6px;
+  --radius-medium: 8px;
+  --radius-large: 12px;
+  --shadow-small: 0 2px 4px rgba(0,0,0,0.3);
+  --shadow-medium: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* ---- Global base ---- */
+html,body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Card / panel wrapper */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-large);
+  padding: 24px;
+  box-shadow: var(--shadow-small);
+}
+
+/* Neumorphic btn base  */
+.btn-nemo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: var(--radius-medium);
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn-nemo:hover { background: var(--bg-hover); box-shadow: var(--shadow-small); }
+.btn-nemo:active { transform: translateY(1px); }
+
+/* Colour variants */
+.btn-purple   { background: var(--accent-purple); border-color: var(--accent-purple); color:#fff; }
+.btn-purple:hover { background: var(--accent-purple-hover); }
+.btn-green    { background: var(--accent-green);  border-color: var(--accent-green);  color:#fff; }
+.btn-green:hover { background: var(--accent-green-hover); }
+.btn-red      { background: var(--accent-red);    border-color: var(--accent-red);    color:#fff; }
+.btn-red:hover   { background: var(--accent-red-hover); }
+
+/* Status chip */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+}
+
+/* Scrollbar (consistent) */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--bg-hover); } 

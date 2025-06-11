@@ -7,8 +7,13 @@ const AIService = require("./ai-service");
 const TaskOrchestrator = require("./task-orchestrator");
 const AtomicScriptGenerator = require("./atomic-script-generator");
 const VisualGuidance = require("./visual-guidance");
-const ComprehensiveTestSuite = require("./comprehensive-test-suite");
 require("dotenv").config();
+
+// Hardcode Deepgram API key if not set
+if (!process.env.DEEPGRAM_API_KEY) {
+  process.env.DEEPGRAM_API_KEY = "a076385db3d2cb8e4eb9c4276b2eed2ae70d154c";
+  console.log("✅ Deepgram API key set from hardcoded value");
+}
 
 // Helper function to load saved system prompt
 function loadSavedSystemPrompt() {
@@ -44,7 +49,6 @@ let aiService;
 let taskOrchestrator;
 let atomicScriptGenerator;
 let visualGuidance;
-let comprehensiveTestSuite;
 let tray = null;
 let lastAudioSentTime = Date.now();
 let userPreferences = null;
@@ -345,9 +349,6 @@ app.whenReady().then(() => {
   } else {
     startMainApp();
   }
-  
-  // Initialize test suite
-  comprehensiveTestSuite = new ComprehensiveTestSuite();
   
   // Prevent app suspension
   app.setName('VoiceMac Assistant');
@@ -1318,39 +1319,4 @@ ipcMain.handle('execute-tutorial-command', async (event, command) => {
     console.error('Tutorial command error:', error);
     return { success: false, error: error.message };
   }
-});
-
-// Comprehensive Testing System
-ipcMain.handle('run-comprehensive-tests', async () => {
-  if (comprehensiveTestSuite) {
-    console.log('🧪 Starting comprehensive test suite...');
-    await comprehensiveTestSuite.runAllTests();
-    return { success: true, message: 'Test suite completed' };
-  }
-  return { success: false, error: 'Test suite not initialized' };
-});
-
-ipcMain.handle('run-test-category', async (event, category) => {
-  if (comprehensiveTestSuite) {
-    console.log(`🧪 Running ${category} tests...`);
-    await comprehensiveTestSuite.runCategory(category);
-    return { success: true, message: `${category} tests completed` };
-  }
-  return { success: false, error: 'Test suite not initialized' };
-});
-
-ipcMain.handle('get-test-results', async () => {
-  if (comprehensiveTestSuite) {
-    return {
-      success: true,
-      results: comprehensiveTestSuite.results,
-      summary: {
-        total: comprehensiveTestSuite.totalTests,
-        passed: comprehensiveTestSuite.passedTests.length,
-        failed: comprehensiveTestSuite.failedTests.length,
-        skipped: comprehensiveTestSuite.skippedTests.length
-      }
-    };
-  }
-  return { success: false, error: 'Test suite not initialized' };
 });

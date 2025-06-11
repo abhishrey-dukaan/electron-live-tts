@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Voice Assistant</title>
+    <link rel="stylesheet" href="theme.css">
+    <link rel="stylesheet" href="modal.css">
     <style>
       * {
         margin: 0;
@@ -571,6 +573,11 @@
           </div>
         </div>
         
+        <!-- Transcript status line -->
+        <div id="transcript" style="padding: 10px 16px; min-height: 24px; font-style: italic; color: var(--text-primary); border-bottom: 1px solid var(--border-muted);">
+          Waiting for voice input...
+        </div>
+
         <div class="transcript-content" id="logContainer">
           <div class="log-entry success">
             <div class="log-time">18:12</div>
@@ -588,6 +595,53 @@
             <div class="log-time">18:12</div>
             <div class="log-message">System ready for voice commands...</div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="settings-modal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Settings & Configuration</h2>
+          <button id="close-modal" class="close-button">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="settings-section">
+            <h3>System Prompt</h3>
+            <textarea id="system-prompt-textarea" rows="10"></textarea>
+            <button id="reset-prompt-btn" class="btn">Reset to Default</button>
+          </div>
+          <div class="settings-section">
+            <h3>Model Configuration</h3>
+            <div class="model-selector">
+              <label for="text-provider-select">Text Provider:</label>
+              <select id="text-provider-select">
+                <option value="">Select Provider</option>
+              </select>
+              <select id="text-model-select">
+                <option value="">Select Model</option>
+              </select>
+            </div>
+            <div class="model-selector">
+              <label for="image-provider-select">Image Provider:</label>
+              <select id="image-provider-select">
+                <option value="">Select Provider</option>
+              </select>
+              <select id="image-model-select">
+                <option value="">Select Model</option>
+              </select>
+            </div>
+          </div>
+          <div class="settings-section">
+            <h3>Testing</h3>
+            <button id="test-models-btn" class="btn">Test All Models</button>
+            <button id="mic-test" class="btn">Test Microphone</button>
+            <div id="test-results"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="cancel-settings-btn" class="btn btn-secondary">Cancel</button>
+          <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
         </div>
       </div>
     </div>
