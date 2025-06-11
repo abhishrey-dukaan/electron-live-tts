@@ -77,6 +77,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let audioProcessor = null;
   let isProcessingCommand = false;
   let heartbeatInterval = null; // Add heartbeat interval
+  let lastAudioLevelLog = 0;
+  let lastAudioSentTime = 0;
 
   // Initialize the interface
   initializeInterface();
@@ -365,8 +367,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="text-gray-300 text-xs">Open Downloads folder</div>
               </div>
               <div class="bg-gray-800 rounded p-3">
-                <div class="font-mono text-green-400 text-sm">"create folder"</div>
-                <div class="text-gray-300 text-xs">Create new folder on desktop</div>
+                <div class="font-mono text-green-400 text-sm">"create folder named MyDocs"</div>
+                <div class="text-gray-300 text-xs">Create new folder on desktop with specified name</div>
               </div>
             </div>
           </div>
@@ -855,157 +857,234 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
     });
   }
 
-  // Initialize audio context
+  // Start recording function
+  async function startRecording() {
+    try {
+      console.log("🎤 Starting recording...");
+      addLogEntry("Starting audio capture...");
+
+      if (!audioContext || audioContext.state === 'closed') {
+        console.log("🔧 Initializing audio system...");
+        const audioInitialized = await initializeAudio();
+        if (!audioInitialized) {
+          addLogEntry("❌ Failed to initialize audio system", "error");
+          return;
+        }
+      }
+
+      // Check if audio context is suspended and resume it
+      if (audioContext.state === 'suspended') {
+        console.log("🔄 Resuming audio context...");
+        await audioContext.resume();
+      }
+
+      // Verify audio track is active
+      if (audioStream) {
+        const audioTrack = audioStream.getAudioTracks()[0];
+        if (!audioTrack || !audioTrack.enabled) {
+          console.log("⚠️ Audio track is not enabled, reinitializing...");
+          const audioInitialized = await initializeAudio();
+          if (!audioInitialized) {
+            addLogEntry("❌ Failed to reinitialize audio", "error");
+            return;
+          }
+        }
+      }
+
+      console.log("🎤 Starting Deepgram connection...");
+      const success = await window.electronAPI.startDeepgram();
+      
+      if (success) {
+        isRecording = true;
+        isProcessingCommand = false;
+        updateButtonStates();
+        updateRecordingStatus("Recording");
+        addLogEntry("✅ Recording started successfully", "success");
+        
+        // Start audio level monitoring
+        startAudioLevelMonitoring();
+      } else {
+        addLogEntry("❌ Failed to start recording", "error");
+        console.error("Failed to start Deepgram connection");
+      }
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      addLogEntry(`❌ Recording error: ${error.message}`, "error");
+    }
+  }
+
+  // Initialize audio context and stream
   async function initializeAudio() {
     try {
-      addLogEntry("Initializing audio...");
+      console.log("🎤 Requesting microphone access...");
+      
+      // First check if we already have permission
+      const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+      console.log("Microphone permission status:", permissionStatus.state);
+      
+      if (permissionStatus.state === 'denied') {
+        addLogEntry("❌ Microphone access denied. Please allow microphone access in your browser settings.", "error");
+        return false;
+      }
 
-      // Request microphone permission with FIXED constraints for Deepgram compatibility
+      // Request microphone access with specific constraints
       audioStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
           sampleRate: 16000,
-          echoCancellation: false,  // FIXED: Disable processing that can corrupt audio
-          noiseSuppression: false,  // FIXED: Disable processing that can corrupt audio
-          autoGainControl: false,   // FIXED: Disable processing that can corrupt audio
-          // Remove Google-specific constraints that may not work
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
         },
-        video: false,
+        video: false
       });
 
-      addLogEntry("Microphone access granted");
-
-      // Create audio context with specific sample rate for Deepgram
+      // Log audio track settings
+      const audioTrack = audioStream.getAudioTracks()[0];
+      console.log("Audio track settings:", audioTrack.getSettings());
+      console.log("Audio track enabled:", audioTrack.enabled);
+      console.log("Audio track muted:", audioTrack.muted);
+      console.log("Audio track readyState:", audioTrack.readyState);
+      
+      // Create audio context with specific sample rate
       audioContext = new (window.AudioContext || window.webkitAudioContext)({
         sampleRate: 16000,
-        latencyHint: 'interactive',
+        latencyHint: 'interactive'
       });
 
-      // Prevent audio context from being suspended
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume();
-      }
-
-      // Add event listeners to handle context state changes
-      audioContext.addEventListener('statechange', () => {
-        console.log(`Audio context state changed to: ${audioContext.state}`);
-        addLogEntry(`🔊 Audio context: ${audioContext.state}`);
-        
-        if (audioContext.state === 'suspended' && isRecording) {
-          audioContext.resume().catch(error => {
-            console.error('Failed to resume audio context:', error);
-            addLogEntry(`❌ Failed to resume audio: ${error.message}`, "error");
-          });
-        }
+      console.log("Audio context created:", {
+        state: audioContext.state,
+        sampleRate: audioContext.sampleRate,
+        baseLatency: audioContext.baseLatency
       });
 
-      // Create media stream source
+      // Create and connect nodes
       const source = audioContext.createMediaStreamSource(audioStream);
-
-      // Create script processor with FIXED buffer size for consistent audio flow
-      audioProcessor = audioContext.createScriptProcessor(2048, 1, 1);  // FIXED: Smaller buffer for more frequent sends
-
-      // Connect nodes
+      audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
       source.connect(audioProcessor);
       audioProcessor.connect(audioContext.destination);
-
-      // Handle audio processing with improved error handling
       audioProcessor.onaudioprocess = handleAudioProcess;
 
-      // Aggressive audio context keep-alive
-      setInterval(() => {
-        if (audioContext && audioContext.state === 'suspended' && isRecording) {
-          console.log('Resuming suspended audio context...');
-          audioContext.resume().catch(error => {
-            console.error('Error resuming audio context:', error);
-            addLogEntry(`⚠️ Audio context resume failed: ${error.message}`, "warning");
-          });
-        }
-      }, 2000); // Check every 2 seconds
-
-      addLogEntry("Audio system initialized successfully");
+      addLogEntry("✅ Audio system initialized", "success");
       return true;
+
     } catch (error) {
-      console.error("Error initializing audio:", error);
-      addLogEntry(`Error initializing audio: ${error.message}`, "error");
+      console.error("Audio initialization error:", error);
       
-      // Try to recover from audio initialization errors
       if (error.name === 'NotAllowedError') {
-        addLogEntry("❌ Microphone permission denied. Please allow microphone access and refresh.", "error");
+        addLogEntry("❌ Microphone access denied. Please allow microphone access in your browser settings.", "error");
       } else if (error.name === 'NotFoundError') {
-        addLogEntry("❌ No microphone found. Please connect a microphone and refresh.", "error");
-      } else if (error.name === 'NotReadableError') {
-        addLogEntry("❌ Microphone is being used by another application.", "error");
-      } else if (error.name === 'OverconstrainedError') {
-        addLogEntry("❌ Microphone doesn't support required audio settings. Trying fallback...", "warning");
-        // Try with less strict constraints
-        try {
-          audioStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              channelCount: 1,
-              sampleRate: 16000,
-            },
-            video: false,
-          });
-          addLogEntry("✅ Fallback audio initialization successful");
-          return true;
-        } catch (fallbackError) {
-          addLogEntry(`❌ Fallback failed: ${fallbackError.message}`, "error");
-        }
+        addLogEntry("❌ No microphone found. Please connect a microphone and try again.", "error");
+      } else {
+        addLogEntry(`❌ Audio initialization error: ${error.message}`, "error");
       }
       
       return false;
     }
   }
 
-  // Handle audio processing - ENHANCED for better Deepgram compatibility
+  // Handle audio processing
   function handleAudioProcess(e) {
-    if (!isRecording) return; // Only skip if not recording, allow during processing
+    if (!isRecording) return;
 
-    const inputData = e.inputBuffer.getChannelData(0);
-    const audioLevel = Math.max(...inputData.map(Math.abs));
-    const now = Date.now();
-
-    // Convert and send audio data with ENHANCED format validation
     try {
+      const inputData = e.inputBuffer.getChannelData(0);
+      const audioLevel = Math.max(...inputData.map(Math.abs));
+      
+      // Debug audio levels
+      if (audioLevel > 0.01) {
+        console.log(`🎤 Audio detected - Level: ${audioLevel.toFixed(4)}`);
+      }
+
+      // Convert to 16-bit PCM
       const int16Data = new Int16Array(inputData.length);
+      let hasSound = false;
       
-      // ENHANCED: Better audio conversion with noise gate
-      let hasAudio = false;
       for (let i = 0; i < inputData.length; i++) {
-        // Apply basic noise gate - only process audio above threshold
-        const sample = inputData[i];
-        if (Math.abs(sample) > 0.001) { // Minimum threshold
-          hasAudio = true;
-        }
-        
-        // Convert to 16-bit with proper clamping
-        int16Data[i] = Math.max(-32768, Math.min(32767, Math.round(sample * 32767)));
-      }
-      
-      // ENHANCED: Only send meaningful audio data OR send silence periodically
-      const timeSinceLastSend = now - (lastAudioTime || 0);
-      
-      if (hasAudio || timeSinceLastSend > 500) { // Send audio or heartbeat every 500ms
-      window.electronAPI.sendAudio(int16Data.buffer);
-      lastAudioTime = now;
-        
-        // Enhanced debugging
-        if (hasAudio) {
-          console.log(`🎤 Sending audio: ${int16Data.length} samples, level: ${audioLevel.toFixed(4)}`);
-        } else if (timeSinceLastSend > 500) {
-          console.log(`💓 Sending heartbeat: ${int16Data.length} samples (silence)`);
+        // Scale and clamp the float32 audio data to int16 range
+        const sample = Math.max(-32768, Math.min(32767, Math.round(inputData[i] * 32767)));
+        int16Data[i] = sample;
+        if (Math.abs(sample) > 250) { // Check if we have meaningful audio
+          hasSound = true;
         }
       }
-      
-      // Show visual feedback based on actual audio level
-      updateWaveAnimation(true, audioLevel);
+
+      // Only send if we have actual audio or every 500ms as keepalive
+      const now = Date.now();
+      if (hasSound || now - lastAudioSentTime > 500) {
+        window.electronAPI.sendAudio(int16Data.buffer);
+        lastAudioSentTime = now;
+        
+        if (hasSound) {
+          console.log(`📢 Sending audio data - Level: ${audioLevel.toFixed(4)}`);
+        }
+      }
+
+      // Update visual feedback
+      updateAudioLevel(audioLevel);
       
     } catch (error) {
-      console.error("Error processing audio data:", error);
-      addLogEntry(`❌ Error processing audio: ${error.message}`, "error");
+      console.error("Error processing audio:", error);
+      addLogEntry(`❌ Audio processing error: ${error.message}`, "error");
     }
   }
+
+  // Monitor audio levels
+  function startAudioLevelMonitoring() {
+    if (!audioContext || !audioStream) return;
+    
+    const audioTrack = audioStream.getAudioTracks()[0];
+    if (audioTrack) {
+      console.log("Audio track state:", {
+        enabled: audioTrack.enabled,
+        muted: audioTrack.muted,
+        readyState: audioTrack.readyState
+      });
+    }
+  }
+
+  // Update audio level indicator
+  function updateAudioLevel(level) {
+    const indicator = document.querySelector('.audio-level-indicator');
+    if (indicator) {
+      const height = Math.min(100, level * 200); // Scale level to percentage
+      indicator.style.height = `${height}%`;
+      indicator.style.backgroundColor = level > 0.01 ? '#22c55e' : '#64748b';
+    }
+  }
+
+  // Add audio level indicator to DOM
+  function addAudioLevelIndicator() {
+    const container = document.createElement('div');
+    container.className = 'audio-level-container';
+    container.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 10px;
+      height: 100px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 5px;
+      overflow: hidden;
+    `;
+
+    const indicator = document.createElement('div');
+    indicator.className = 'audio-level-indicator';
+    indicator.style.cssText = `
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      height: 0%;
+      background: #64748b;
+      transition: all 0.1s ease;
+    `;
+
+    container.appendChild(indicator);
+    document.body.appendChild(container);
+  }
+
+  // Call this when the page loads
+  addAudioLevelIndicator();
 
   // Update transcription UI with status
   function updateTranscriptionStatus(status) {
@@ -1355,91 +1434,6 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
     }
   }
 
-  // Start recording function
-  async function startRecording() {
-    try {
-      if (!audioContext) {
-        addLogEntry("🔧 No audio context - initializing...");
-        const audioInitialized = await initializeAudio();
-        if (!audioInitialized) {
-          addLogEntry("❌ Failed to initialize audio system", "error");
-          return;
-        }
-      }
-
-      // Check microphone permissions first
-      try {
-        const permissionState = await navigator.permissions.query({name: 'microphone'});
-        addLogEntry(`🎤 Microphone permission: ${permissionState.state}`);
-        
-        if (permissionState.state === 'denied') {
-          addLogEntry("❌ Microphone permission denied - please enable in browser settings", "error");
-          return;
-        }
-      } catch (permError) {
-        console.log("Could not check microphone permissions:", permError);
-      }
-
-      addLogEntry("🎤 Starting continuous recording...");
-      console.log("🎤 Attempting to start Deepgram connection for continuous listening");
-      
-      const success = await window.electronAPI.startDeepgram();
-      
-      console.log("Deepgram start result:", success);
-      
-      if (success) {
-        isRecording = true;
-        isProcessingCommand = false;
-        updateButtonStates();
-        updateRecordingStatus("Recording");
-        updateRecordingIndicator("processing");
-        updateConnectionStatus("Connected");
-        updateConnectionIndicator("connected");
-        
-        addLogEntry("✅ Continuous recording started - speak naturally with pauses!", "success");
-        console.log("✅ Continuous recording active - speak with natural pauses...");
-        
-        // Clear any previous transcript and timers
-        currentTranscript = "";
-        if (silenceTimer) {
-          clearTimeout(silenceTimer);
-          silenceTimer = null;
-        }
-        if (commandSilenceTimer) {
-          clearTimeout(commandSilenceTimer);
-          commandSilenceTimer = null;
-        }
-        
-        // Remove problematic heartbeat - real audio data should keep connection alive
-        if (heartbeatInterval) {
-          clearInterval(heartbeatInterval);
-          heartbeatInterval = null;
-        }
-        
-        updateTranscriptionStatus('ready');
-        
-        // Test audio immediately after starting
-        setTimeout(() => {
-          addLogEntry("🔍 Checking audio flow...");
-          console.log("🔍 Audio context state:", audioContext?.state);
-          console.log("🔍 Audio stream active:", audioStream?.active);
-          console.log("🔍 Audio tracks:", audioStream?.getAudioTracks()?.map(t => ({ 
-            enabled: t.enabled, 
-            muted: t.muted, 
-            readyState: t.readyState 
-          })));
-        }, 2000);
-        
-      } else {
-        addLogEntry("❌ Failed to start recording", "error");
-        console.error("❌ Failed to start Deepgram connection");
-      }
-    } catch (error) {
-      console.error("Error starting recording:", error);
-      addLogEntry(`❌ Error starting recording: ${error.message}`, "error");
-    }
-  }
-
   // Process command manually (backup option)
   async function processCommand() {
     if (!currentTranscript.trim()) {
@@ -1470,10 +1464,8 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
       
       currentTranscript = "";
 
-      // Restart recording after processing
-      setTimeout(() => {
-        startRecording();
-      }, 2000);
+      // Don't automatically restart recording - user can manually restart if needed
+      console.log("Command processed - manual restart required if needed");
       
     } catch (error) {
       console.error("Error processing command:", error);
@@ -1922,5 +1914,106 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
   window.electronAPI.onVisualFallbackFailed((event, data) => {
     const { error } = data;
     addLogEntry(`❌ Visual fallback also failed: ${error}`, "error");
+  });
+
+  // Function to simulate voice commands for testing
+  window.executeVoiceCommand = async (command) => {
+    console.log(`🎤 Simulating voice command: "${command}"`);
+    
+    try {
+      // Stop any existing recording
+      await stopRecording();
+      
+      // Simulate the transcript event
+      const simulatedResponse = {
+        channel: {
+          alternatives: [
+            {
+              transcript: command,
+              confidence: 0.98
+            }
+          ]
+        },
+        is_final: true
+      };
+      
+      // Process the simulated transcript
+      processTranscript(simulatedResponse);
+      
+      // Wait for command processing
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      return true;
+    } catch (error) {
+      console.error('Error executing simulated voice command:', error);
+      return false;
+    }
+  };
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', async (event) => {
+    // Check if Command (Mac) or Control (Windows/Linux) is pressed
+    const isCmdOrCtrl = event.metaKey || event.ctrlKey;
+    
+    if (isCmdOrCtrl) {
+      switch (event.key.toLowerCase()) {
+        case 's':
+          event.preventDefault();
+          if (isRecording) {
+            await stopRecording();
+          } else {
+            await startRecording();
+          }
+          break;
+        
+        case 'y':
+          event.preventDefault();
+          const testYoutubeBtn = document.getElementById('testYoutubeBtn');
+          if (testYoutubeBtn) {
+            testYoutubeBtn.click();
+          }
+          break;
+        
+        case 'm':
+          event.preventDefault();
+          const testMicrophoneBtn = document.getElementById('testMicrophoneBtn');
+          if (testMicrophoneBtn) {
+            testMicrophoneBtn.click();
+          }
+          break;
+        
+        case 't':
+          event.preventDefault();
+          const runTestBtn = document.getElementById('runTestBtn');
+          if (runTestBtn) {
+            runTestBtn.click();
+          }
+          break;
+        
+        case 'l':
+          event.preventDefault();
+          const clearLogBtn = document.getElementById('clearLogBtn');
+          if (clearLogBtn) {
+            clearLogBtn.click();
+          }
+          break;
+        
+        case 'h':
+          event.preventDefault();
+          const helpBtn = document.getElementById('helpBtn');
+          if (helpBtn) {
+            helpBtn.click();
+          }
+          break;
+        
+        case ',':
+          event.preventDefault();
+          const settingsBtn = document.getElementById('settingsBtn');
+          if (settingsBtn) {
+            settingsBtn.click();
+          }
+          break;
+      }
+    }
   });
 });

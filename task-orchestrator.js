@@ -490,11 +490,21 @@ Be concise and practical.`;
 
   // Helper functions for simple system commands
   async executeCreateFolder(transcript) {
-    const script = `osascript -e 'tell application "Finder" to make new folder at desktop with properties {name:"New Folder"}'`;
+    // Extract folder name from the command
+    const folderNameMatch = transcript.match(/create (?:a )?folder (?:named |called )?["']?([^"']+)["']?/i);
+    if (!folderNameMatch) {
+      return {
+        success: false,
+        error: "Could not determine folder name from command. Please specify a name like 'create folder named MyFolder'"
+      };
+    }
+    
+    const folderName = folderNameMatch[1].trim();
+    const script = `osascript -e 'tell application "Finder" to make new folder at desktop with properties {name:"${folderName}"}'`;
     const result = await this.executeShellCommand(script);
     return {
       success: result.success,
-      message: result.success ? "Created new folder on desktop" : result.error
+      message: result.success ? `Created folder "${folderName}" on desktop` : result.error
     };
   }
 
@@ -544,7 +554,16 @@ Be concise and practical.`;
       
       let script;
       if (command.action === 'launch') {
-        script = `osascript -e 'tell application "${command.app}" to activate'`;
+        // Enhanced activation script that handles minimized windows
+        script = `osascript -e '
+          tell application "${command.app}"
+            activate
+            if it is running then
+              tell application "System Events"
+                set frontmost of process "${command.app}" to true
+              end tell
+            end if
+          end tell'`;
       } else if (command.action === 'quit') {
         script = `osascript -e 'tell application "${command.app}" to quit'`;
       } else if (command.action === 'open') {
@@ -586,33 +605,157 @@ Be concise and practical.`;
 
   // NEW: Web task execution with Playwright
   async executeWebTaskWithPlaywright(transcript) {
+    console.log(`🌐 Executing web task with Playwright: ${transcript}`);
+    
     try {
-      console.log(`🎭 Starting Playwright web automation for: ${transcript}`);
-      
       // Initialize Playwright if needed
-      await this.initializePlaywright();
-      
-      const lowerTranscript = transcript.toLowerCase();
-      
-      // Start multi-step task visualization
-      if (this.onStepComplete) {
-        this.onStepComplete("Open web browser", "active");
+      if (!this.browser) {
+        await this.initializePlaywright();
       }
       
-      // Analyze what type of web task this is
-      if (lowerTranscript.includes('youtube')) {
-        return await this.executeYouTubeTask(transcript);
-      } else if (lowerTranscript.includes('search') || lowerTranscript.includes('google')) {
-        return await this.executeSearchTask(transcript);
-      } else {
-        // Generic web navigation
-        return await this.executeGenericWebTask(transcript);
+      // Generate steps based on the task
+      const steps = await this.generateWebTaskSteps(transcript);
+      console.log(`🌐 Executing web task ${steps.type} with ${steps.steps.length} steps`);
+      
+      // Execute each step
+      for (let i = 0; i < steps.steps.length; i++) {
+        const step = steps.steps[i];
+        const stepNumber = i + 1;
+        
+        // Notify about step execution
+        if (this.onStepComplete) {
+          this.onStepComplete({
+            stepNumber,
+            totalSteps: steps.steps.length,
+            description: step
+          });
+        }
+        
+        // Execute the step
+        await this.executeIterationStep(step, stepNumber, steps.steps.length);
+        
+        // Check if we should stop
+        if (this.shouldStop) {
+          console.log('🛑 Web task execution stopped by request');
+          break;
+        }
       }
+      
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Web task execution error:', error);
+      throw error;
+    }
+  }
+
+  // Execute a single step in a task iteration
+  async executeIterationStep(step, currentStep, totalSteps) {
+    console.log(`📋 Executing step ${currentStep}/${totalSteps}: ${step}`);
+    
+    try {
+      const page = await this.browser.newPage();
+      
+      switch (step.toLowerCase()) {
+        case 'open safari browser':
+        case 'open browser':
+          // Browser is already open via Playwright
+          await this.delay(1000); // Simulate browser opening
+          break;
+          
+        case 'navigate to youtube':
+        case 'go to youtube':
+          await page.goto('https://www.youtube.com');
+          await page.waitForLoadState('networkidle');
+          break;
+          
+        case 'search for the requested video':
+          const searchQuery = this.extractSearchTerms(this.currentTask);
+          await page.fill('input#search', searchQuery);
+          await page.press('input#search', 'Enter');
+          await page.waitForLoadState('networkidle');
+          break;
+          
+        case 'select the appropriate video':
+          await page.click('ytd-video-renderer:first-child');
+          await page.waitForLoadState('networkidle');
+          break;
+          
+        case 'start playback':
+          await page.click('.ytp-play-button');
+          await this.delay(2000); // Wait for playback to start
+          break;
+          
+        default:
+          if (step.startsWith('navigate to ')) {
+            const url = step.replace('navigate to ', '').trim();
+            await page.goto(url.startsWith('http') ? url : `https://${url}`);
+            await page.waitForLoadState('networkidle');
+          } else {
+            console.warn(`⚠️ Unknown step: ${step}`);
+          }
+      }
+      
+      // Take screenshot after each step for verification
+      await page.screenshot({ 
+        path: `step-${currentStep}-screenshot.png`,
+        fullPage: true 
+      });
+      
+      await page.close();
       
     } catch (error) {
-      console.error('Playwright web task failed:', error);
-      return { success: false, error: `Web automation failed: ${error.message}` };
+      console.error(`❌ Step execution error: ${error.message}`);
+      throw error;
     }
+  }
+
+  // Helper function to generate web task steps
+  async generateWebTaskSteps(transcript) {
+    const lowerTranscript = transcript.toLowerCase();
+    
+    if (lowerTranscript.includes('youtube') || lowerTranscript.includes('play') && lowerTranscript.includes('video')) {
+      return {
+        type: 'youtube_search',
+        steps: [
+          'Open Safari browser',
+          'Navigate to YouTube',
+          'Search for the requested video',
+          'Select the appropriate video',
+          'Start playback'
+        ]
+      };
+    }
+    
+    if (lowerTranscript.includes('search') || lowerTranscript.includes('google')) {
+      return {
+        type: 'web_search',
+        steps: [
+          'Open Safari browser',
+          'Navigate to Google',
+          'Enter search query',
+          'Press search button'
+        ]
+      };
+    }
+    
+    // Default web navigation
+    const url = this.extractUrl(transcript);
+    return {
+      type: 'web_navigation',
+      steps: [
+        'Open Safari browser',
+        `Navigate to ${url}`
+      ]
+    };
+  }
+
+  // Helper to extract URL from transcript
+  extractUrl(transcript) {
+    const urlMatch = transcript.match(/(?:go to|open|navigate to|visit)\s+(?:https?:\/\/)?([^\s]+)/i);
+    if (urlMatch) {
+      return urlMatch[1];
+    }
+    return 'google.com'; // Default fallback
   }
 
   async initializePlaywright() {

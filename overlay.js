@@ -380,133 +380,106 @@ document.addEventListener('keydown', (event) => {
 });
 
 // Update status message in bottom left
-function updateStatusMessage(message, type = 'default') {
-  if (!statusArea) return;
+function updateStatusMessage(message, type = 'info') {
+  const statusText = document.getElementById('status-text');
+  const status = document.getElementById('status');
+  const indicator = document.getElementById('status-indicator');
   
-  statusArea.innerHTML = `<span style="margin-left: 12px;">${message}</span>`;
+  if (!statusText || !status || !indicator) return;
   
-  // Remove existing status classes
-  statusArea.classList.remove('processing', 'success', 'error', 'visible');
+  // Update status text
+  statusText.textContent = message;
   
-  // Add appropriate class and show
-  if (type !== 'default') {
-    statusArea.classList.add(type);
-  }
-  statusArea.classList.add('visible');
+  // Update status classes
+  status.className = `status ${type}`;
   
-  // Auto-hide after certain delay based on type
-  const hideDelay = type === 'success' ? 3000 : type === 'error' ? 4000 : 0;
-  if (hideDelay > 0) {
-    setTimeout(() => {
-      statusArea.classList.remove('visible');
-    }, hideDelay);
+  // Update indicator
+  indicator.className = 'status-indicator';
+  switch(type) {
+    case 'success':
+      indicator.classList.add('ready');
+      break;
+    case 'error':
+      indicator.classList.add('error');
+      break;
+    case 'processing':
+      indicator.classList.add('processing');
+      break;
+    default:
+      indicator.classList.add('ready');
   }
 }
 
 // Update status indicator
-function updateStatus(status) {
-  // Remove existing status classes
-  transcriptArea.classList.remove('processing', 'success', 'error');
+function updateStatus(status = 'ready') {
+  const indicator = document.getElementById('status-indicator');
+  if (!indicator) return;
   
-  // Hide all indicators
-  spinnerIcon.classList.remove('active');
-  successIcon.classList.remove('active');
-  errorIcon.classList.remove('active');
+  // Remove all status classes
+  indicator.className = 'status-indicator';
   
-  // Update microphone indicator
-  const micIndicator = document.querySelector('.mic-indicator');
-  const audioBars = document.querySelector('.audio-bars');
-  
+  // Add appropriate status class
   switch(status) {
-    case 'processing':
-      transcriptArea.classList.add('processing');
-      spinnerIcon.classList.add('active');
-      // Make mic indicator more active
-      if (micIndicator) {
-        micIndicator.style.background = 'rgba(245, 158, 11, 0.2)';
-        micIndicator.style.borderColor = 'rgba(245, 158, 11, 0.4)';
-        micIndicator.style.color = '#f59e0b';
-      }
-      if (audioBars) {
-        audioBars.style.display = 'flex';
-      }
-      break;
-    case 'success':
-      transcriptArea.classList.add('success');
-      successIcon.classList.add('active');
-      // Make mic indicator green
-      if (micIndicator) {
-        micIndicator.style.background = 'rgba(34, 197, 94, 0.2)';
-        micIndicator.style.borderColor = 'rgba(34, 197, 94, 0.4)';
-        micIndicator.style.color = '#22c55e';
-      }
-      if (audioBars) {
-        audioBars.style.display = 'flex';
-      }
+    case 'ready':
+      indicator.classList.add('ready');
       break;
     case 'error':
-      transcriptArea.classList.add('error');
-      errorIcon.classList.add('active');
-      // Make mic indicator red
-      if (micIndicator) {
-        micIndicator.style.background = 'rgba(239, 68, 68, 0.2)';
-        micIndicator.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-        micIndicator.style.color = '#ef4444';
-      }
-      if (audioBars) {
-        audioBars.style.display = 'none';
-      }
+      indicator.classList.add('error');
       break;
-    default:
-      // Default active listening state
-      if (micIndicator) {
-        micIndicator.style.background = 'rgba(34, 197, 94, 0.15)';
-        micIndicator.style.borderColor = 'rgba(34, 197, 94, 0.3)';
-        micIndicator.style.color = '#22c55e';
-      }
-      if (audioBars) {
-        audioBars.style.display = 'flex';
-      }
+    case 'processing':
+      indicator.classList.add('processing');
       break;
   }
 }
 
-// Handle Deepgram events
-ipcRenderer.on("deepgram-ready", () => {
-  console.log("Overlay: Deepgram ready");
-  updateStatusMessage("🎤 Ready for commands...");
-});
+// Update transcript display
+function updateTranscript(transcript, isFinal = false) {
+  const transcriptElement = document.getElementById('transcript');
+  if (!transcriptElement) return;
+  
+  // Show the current transcript
+  if (transcript && transcript.trim()) {
+    transcriptElement.textContent = transcript;
+    transcriptElement.classList.toggle('final', isFinal);
+    
+    // Update status to show we're receiving audio
+    if (!isFinal) {
+      updateStatusMessage(`🎤 Listening: "${transcript}"`, 'processing');
+    } else {
+      updateStatusMessage(`🎯 Detected: "${transcript}"`, 'success');
+    }
+  } else {
+    transcriptElement.textContent = "Waiting for voice input...";
+    transcriptElement.classList.remove('final');
+  }
+}
 
-ipcRenderer.on("deepgram-transcript", (event, data) => {
+// Listen for Deepgram transcripts
+ipcRenderer.on("deepgram-transcript", (event, response) => {
   try {
-    if (data.channel && data.channel.alternatives && data.channel.alternatives.length > 0) {
-      const transcript = data.channel.alternatives[0].transcript;
+    const transcript = response.channel?.alternatives[0]?.transcript || "";
+    const isFinal = response.is_final; // Fixed: removed the negation
+    
+    if (transcript && transcript.trim()) {
+      currentTranscript = transcript;
+      updateTranscript(transcript, isFinal);
       
-      if (transcript && transcript.trim()) {
-        if (data.is_final) {
-          // Accumulate transcripts like the main window
-          if (currentTranscript.trim()) {
-            currentTranscript += " " + transcript.trim();
-          } else {
-            currentTranscript = transcript.trim();
-          }
-          transcriptText.textContent = currentTranscript;
-          
-          // Show that we detected speech
-          updateStatus('processing');
-          
-        } else {
-          // Show interim results
-          const fullInterimText = currentTranscript + (currentTranscript ? " " : "") + transcript;
-          transcriptText.textContent = fullInterimText;
+      if (isFinal) {
+        console.log("Final transcript:", transcript);
+        // Add to history only if it's a meaningful command
+        if (transcript.length > 3 && !transcript.match(/^(um|uh|ah|oh|hmm)/i)) {
+          addToHistory(transcript, 'voice', 'pending');
         }
       }
     }
   } catch (error) {
-    console.error("Overlay: Error processing transcript:", error);
-    transcriptText.textContent = "❌ Transcript error";
-    updateStatus('error');
+    console.error("Error handling transcript:", error);
   }
+});
+
+ipcRenderer.on("deepgram-ready", () => {
+  updateStatusMessage("🎤 Ready for voice commands", 'success');
+  updateStatus('ready');
 });
 
 ipcRenderer.on("deepgram-error", (event, error) => {
@@ -898,12 +871,6 @@ async function handleManualCommand() {
     sendButton.disabled = false;
     input.focus();
   }
-}
-
-// Update transcript display for both voice and manual input
-function updateTranscript(text) {
-  currentTranscript = text;
-  transcriptText.textContent = text;
 }
 
 // Multi-step Task Execution Functions
@@ -1318,4 +1285,13 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   
   console.log("Overlay widget initialized with multi-step task support");
+});
+
+// Add audio level meter update handler
+ipcRenderer.on("audio-level", (event, level) => {
+  const meter = document.getElementById('audio-meter');
+  if (!meter) return;
+  // Clamp level between 0 and 1, scale to %
+  const pct = Math.min(1, Math.max(0, level)) * 100;
+  meter.style.width = pct + '%';
 }); 

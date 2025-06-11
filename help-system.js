@@ -21,7 +21,7 @@ class HelpSystem {
             'files': [
                 { command: 'open downloads', example: 'open downloads', description: 'Open Downloads folder' },
                 { command: 'open documents', example: 'open documents', description: 'Open Documents folder' },
-                { command: 'create folder', example: 'create folder', description: 'Create new folder on desktop' }
+                { command: 'create folder [name]', example: 'create folder named MyFolder', description: 'Create new folder on desktop with specified name' }
             ]
         };
         

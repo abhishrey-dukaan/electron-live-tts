@@ -9,11 +9,8 @@ const AtomicScriptGenerator = require("./atomic-script-generator");
 const VisualGuidance = require("./visual-guidance");
 require("dotenv").config();
 
-// Hardcode Deepgram API key if not set
-if (!process.env.DEEPGRAM_API_KEY) {
-  process.env.DEEPGRAM_API_KEY = "a076385db3d2cb8e4eb9c4276b2eed2ae70d154c";
-  console.log("✅ Deepgram API key set from hardcoded value");
-}
+// Add Deepgram API key
+process.env.DEEPGRAM_API_KEY = 'a076385db3d2cb8e4eb9c4276b2eed2ae70d154c';
 
 // Helper function to load saved system prompt
 function loadSavedSystemPrompt() {
@@ -52,6 +49,41 @@ let visualGuidance;
 let tray = null;
 let lastAudioSentTime = Date.now();
 let userPreferences = null;
+let lastAudioLogTime = Date.now();
+
+// Connection management variables
+let deepgramConnectionAttempts = 0;
+let lastConnectionAttempt = 0;
+let reconnectTimeout = null;
+let isConnecting = false;
+
+// Global cleanup function to fully reset Deepgram state
+function cleanupDeepgramState() {
+  console.log("🧹 Cleaning up Deepgram state...");
+  
+  // Clear any pending reconnection attempts
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+    console.log("🔄 Cleared pending reconnection timeout");
+  }
+  
+  // Reset connection management variables
+  isConnecting = false;
+  deepgramConnectionAttempts = 0;
+  lastConnectionAttempt = 0;
+  
+  // Close WebSocket if exists
+  if (deepgramSocket) {
+    deepgramSocket.removeAllListeners();
+    if (deepgramSocket.readyState === WebSocket.OPEN || deepgramSocket.readyState === WebSocket.CONNECTING) {
+      deepgramSocket.close(1000, "Cleanup");
+    }
+    deepgramSocket = null;
+  }
+  
+  console.log("✅ Deepgram state cleaned up");
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -431,6 +463,53 @@ ipcMain.handle("close-overlay", async () => {
   return { success: false, message: "Overlay window not found" };
 });
 
+// Handle audio data with better error handling and logging
+ipcMain.on("audio-data", (event, buffer) => {
+  if (!deepgramSocket) {
+    console.log("No Deepgram connection available - dropping audio data");
+    return;
+  }
+
+  if (deepgramSocket.readyState !== WebSocket.OPEN) {
+    console.log(`Deepgram WebSocket not ready (state: ${deepgramSocket.readyState}) - dropping audio data`);
+    return;
+  }
+
+  try {
+    // Convert ArrayBuffer to Buffer
+    const audioBuffer = Buffer.from(buffer);
+    
+    // Validate buffer
+    if (audioBuffer.length === 0) {
+      console.warn("Received empty audio buffer");
+      return;
+    }
+
+    if (audioBuffer.length % 2 !== 0) {
+      console.warn(`Audio buffer length ${audioBuffer.length} is odd, trimming`);
+      audioBuffer = audioBuffer.subarray(0, audioBuffer.length - 1);
+    }
+
+    // Send audio data
+    deepgramSocket.send(audioBuffer);
+
+    // Log audio data periodically
+    const now = Date.now();
+    if (now - lastAudioLogTime > 5000) {
+      console.log(`📊 Sent ${audioBuffer.length} bytes of audio data to Deepgram`);
+      lastAudioLogTime = now;
+    }
+  } catch (error) {
+    console.error("Error sending audio data to Deepgram:", error);
+    
+    // Don't automatically reconnect - let the UI handle it
+    mainWindow.webContents.send("deepgram-error", "Failed to send audio data");
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send("deepgram-error", "Failed to send audio data");
+    }
+  }
+});
+
 // Enhanced Deepgram connection function with rate limiting
 async function startDeepgramConnection() {
   try {
@@ -438,25 +517,44 @@ async function startDeepgramConnection() {
       throw new Error("Deepgram API key not found");
     }
 
-    // Prevent multiple concurrent connections
-    if (deepgramSocket && deepgramSocket.readyState === WebSocket.CONNECTING) {
-      console.log("⚠️ Connection already in progress, waiting...");
+    // Prevent multiple simultaneous connection attempts
+    if (isConnecting) {
+      console.log("Connection attempt already in progress, skipping...");
       return false;
     }
 
-    // Close existing connection if any
-    if (deepgramSocket && (deepgramSocket.readyState === WebSocket.OPEN || deepgramSocket.readyState === WebSocket.CONNECTING)) {
-      console.log("Closing existing connection...");
-      deepgramSocket.removeAllListeners(); // Remove all listeners to prevent duplicate events
-      deepgramSocket.close();
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait for clean closure
+    // Rate limiting: wait between connection attempts
+    const now = Date.now();
+    const timeSinceLastAttempt = now - lastConnectionAttempt;
+    const minWaitTime = Math.min(5000 * Math.pow(2, deepgramConnectionAttempts), 60000); // Exponential backoff, max 1 minute
+
+    if (timeSinceLastAttempt < minWaitTime) {
+      const waitTime = minWaitTime - timeSinceLastAttempt;
+      console.log(`⏳ Rate limiting: waiting ${Math.round(waitTime/1000)}s before next connection attempt...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
     }
 
-    console.log("Creating new Deepgram WebSocket connection...");
+    isConnecting = true;
+    lastConnectionAttempt = Date.now();
+    deepgramConnectionAttempts++;
+
+    // Close existing connection if any
+    if (deepgramSocket) {
+      console.log("Closing existing Deepgram connection...");
+      deepgramSocket.removeAllListeners();
+      if (deepgramSocket.readyState === WebSocket.OPEN || deepgramSocket.readyState === WebSocket.CONNECTING) {
+        deepgramSocket.close();
+      }
+      deepgramSocket = null;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    console.log(`Creating new Deepgram WebSocket connection (attempt ${deepgramConnectionAttempts})...`);
+    console.log("Using API key:", process.env.DEEPGRAM_API_KEY.substring(0, 8) + '...');
 
     // Create new WebSocket connection with optimized parameters
     deepgramSocket = new WebSocket(
-      "wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=true&smart_format=true&endpointing=300&utterance_end_ms=2000&vad_events=true",
+      "wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=true&endpointing=500",
       {
         headers: {
           Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
@@ -464,34 +562,17 @@ async function startDeepgramConnection() {
       }
     );
 
-    // Connection management variables
-    let keepAliveInterval;
-    let reconnectAttempts = 0;
-    const maxReconnectAttempts = 3;
-    
     // Set up event handlers
     deepgramSocket.on("open", () => {
       console.log("✅ Deepgram WebSocket opened successfully");
-      reconnectAttempts = 0; // Reset on successful connection
-      lastAudioSentTime = Date.now(); // Reset global audio tracking
+      console.log("Connection ready for audio streaming");
       
-      // Send periodic audio data checks instead of ping/pong
-      keepAliveInterval = setInterval(() => {
-        if (deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
-          const timeSinceLastAudio = Date.now() - lastAudioSentTime;
-          
-          // If no audio data sent for 25 seconds, log warning
-          if (timeSinceLastAudio > 25000) {
-            console.log("⚠️ No audio data sent for 25+ seconds - connection may timeout soon");
-          }
-          
-          // Deepgram will close at 30 seconds without data
-          console.log(`📡 Connection alive - last audio: ${timeSinceLastAudio}ms ago`);
-        }
-      }, 15000); // Check every 15 seconds
+      // Reset connection attempts on successful connection
+      deepgramConnectionAttempts = 0;
+      isConnecting = false;
       
       mainWindow.webContents.send("deepgram-ready");
-      if (overlayWindow) {
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
         overlayWindow.webContents.send("deepgram-ready");
       }
     });
@@ -499,10 +580,10 @@ async function startDeepgramConnection() {
     deepgramSocket.on("message", (data) => {
       try {
         const response = JSON.parse(data);
-        // Don't update lastAudioSentTime here - that's for tracking outgoing audio
+        console.log("Received transcript:", response.channel?.alternatives[0]?.transcript || "no transcript");
         
         mainWindow.webContents.send("deepgram-transcript", response);
-        if (overlayWindow) {
+        if (overlayWindow && !overlayWindow.isDestroyed()) {
           overlayWindow.webContents.send("deepgram-transcript", response);
         }
       } catch (error) {
@@ -511,91 +592,35 @@ async function startDeepgramConnection() {
     });
 
     deepgramSocket.on("close", (code, reason) => {
-      console.log("🔌 Deepgram WebSocket closed:", code, reason?.toString());
+      console.log(`🔌 Deepgram WebSocket closed: ${code} - ${reason}`);
+      isConnecting = false;
       
-      // Clear keepalive interval
-      if (keepAliveInterval) {
-        clearInterval(keepAliveInterval);
-        keepAliveInterval = null;
+      // Notify UI of disconnection but don't auto-reconnect
+      mainWindow.webContents.send("deepgram-closed", { code, reason });
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
+        overlayWindow.webContents.send("deepgram-closed", { code, reason });
       }
       
-      mainWindow.webContents.send("deepgram-closed", {
-        code,
-        reason: reason?.toString() || "Connection closed",
-      });
-      if (overlayWindow) {
-        overlayWindow.webContents.send("deepgram-closed", {
-          code,
-          reason: reason?.toString() || "Connection closed",
-        });
-      }
-      
-      // Enhanced auto-reconnect logic with better rate limiting
-      if (code !== 1000 && code !== 1001 && reconnectAttempts < maxReconnectAttempts) {
-        const isRateLimited = code === 1006 && reason?.toString().includes('429');
-        const isTimeout = code === 1011;
-        
-        let backoffTime;
-        if (isRateLimited) {
-          backoffTime = Math.pow(2, reconnectAttempts + 3) * 1000; // Longer for rate limits: 16s, 32s, 64s
-        } else if (isTimeout) {
-          backoffTime = 5000; // Quick reconnect for timeouts
-        } else {
-          backoffTime = Math.pow(2, reconnectAttempts + 1) * 1000; // Normal: 4s, 8s, 16s
-        }
-        
-        console.log(`🔄 Attempting to reconnect in ${backoffTime/1000}s... (${reconnectAttempts + 1}/${maxReconnectAttempts})`);
-        reconnectAttempts++;
-        
-        setTimeout(async () => {
-          try {
-            console.log("🔄 Auto-reconnecting to Deepgram...");
-            const success = await startDeepgramConnection();
-            if (success) {
-              console.log("✅ Auto-reconnection successful");
-              mainWindow.webContents.send("deepgram-reconnected");
-              if (overlayWindow) {
-                overlayWindow.webContents.send("deepgram-reconnected");
-              }
-            }
-          } catch (error) {
-            console.error("❌ Auto-reconnection failed:", error);
-          }
-        }, backoffTime);
-      } else {
-        console.log("🛑 Max reconnection attempts reached or planned closure");
-      }
+      console.log("🔌 Connection closed - manual reconnection required");
     });
 
     deepgramSocket.on("error", (error) => {
-      console.error("💥 Deepgram WebSocket error:", error);
+      console.error("🚨 Deepgram WebSocket error:", error.message);
+      isConnecting = false;
       
-      // Clear keepalive interval on error
-      if (keepAliveInterval) {
-        clearInterval(keepAliveInterval);
-        keepAliveInterval = null;
-      }
-      
-      // Check for rate limiting
-      if (error.message && error.message.includes('429')) {
-        console.log("⚠️  Rate limited by Deepgram - will retry with longer delay");
-        mainWindow.webContents.send("deepgram-error", "Rate limited - reconnecting with delay");
-        if (overlayWindow) {
-          overlayWindow.webContents.send("deepgram-error", "Rate limited - reconnecting with delay");
-        }
-      } else {
-        mainWindow.webContents.send("deepgram-error", error.message);
-        if (overlayWindow) {
-          overlayWindow.webContents.send("deepgram-error", error.message);
-        }
+      // Handle specific error types
+      if (error.message.includes('429')) {
+        console.log("⚠️ Rate limited by Deepgram - backing off");
+        deepgramConnectionAttempts += 2; // Increase backoff for rate limiting
       }
     });
 
-    // Wait for connection to be established
+    // Wait for connection with timeout
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error("WebSocket connection timeout (10s)"));
-      }, 10000);
+        isConnecting = false;
+        reject(new Error("Deepgram connection timeout (15s)"));
+      }, 15000);
 
       deepgramSocket.once("open", () => {
         clearTimeout(timeout);
@@ -604,76 +629,81 @@ async function startDeepgramConnection() {
 
       deepgramSocket.once("error", (error) => {
         clearTimeout(timeout);
+        isConnecting = false;
         reject(error);
       });
     });
 
     return true;
   } catch (error) {
-    console.error("❌ Error starting Deepgram:", error);
+    isConnecting = false;
+    console.error("Failed to start Deepgram:", error);
+    
+    // Don't spam error messages for rate limiting
+    if (!error.message.includes('429') && !error.message.includes('timeout')) {
+      console.error("Error details:", {
+        message: error.message,
+        code: error.code,
+        type: error.type
+      });
+    }
+    
+    // Only send error to UI if it's not a rate limiting or connection attempt issue
+    if (!error.message.includes('429') && deepgramConnectionAttempts <= 3) {
+      mainWindow.webContents.send("deepgram-error", error.message);
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
+        overlayWindow.webContents.send("deepgram-error", error.message);
+      }
+    }
+    
     return false;
   }
 }
 
-// Handle start Deepgram connection
-ipcMain.handle("start-deepgram", async () => {
-  return await startDeepgramConnection();
-});
-
-// Handle stop Deepgram connection
-ipcMain.handle("stop-deepgram", async () => {
-  if (deepgramSocket) {
-    const closePromise = new Promise((resolve) => {
-      deepgramSocket.once("close", () => resolve());
-    });
-
-    deepgramSocket.close();
-    await closePromise;
-    deepgramSocket = null;
-  }
-  return true;
-});
-
-// Handle sending audio data to Deepgram - ENHANCED
-ipcMain.on("audio-data", (event, buffer) => {
-  if (deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
-    try {
-      // Convert ArrayBuffer to Buffer with validation
-      const audioBuffer = Buffer.from(buffer);
-      
-      // ENHANCED: Validate audio buffer format
-      if (audioBuffer.length > 0) {
-        // Ensure buffer length is even (16-bit samples)
-        if (audioBuffer.length % 2 !== 0) {
-          console.warn(`⚠️ Audio buffer length ${audioBuffer.length} is odd, trimming`);
-          audioBuffer = audioBuffer.subarray(0, audioBuffer.length - 1);
-        }
-        
-        deepgramSocket.send(audioBuffer);
-        lastAudioSentTime = Date.now(); // Update last audio sent time
-        
-        // ENHANCED: Better debugging with audio level detection
-        const int16Array = new Int16Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.length / 2);
-        const maxSample = Math.max(...Array.from(int16Array).map(Math.abs));
-        const audioLevel = maxSample / 32767;
-        
-        // Log with audio level info
-        const now = Date.now();
-        if (now % 5000 < 100) { // Log roughly every 5 seconds
-          console.log(`📊 Audio flowing: ${audioBuffer.length} bytes, level: ${audioLevel.toFixed(3)} ${audioLevel > 0.01 ? '🎤' : '🔇'}`);
-        }
-      }
-    } catch (error) {
-      console.error("Error sending audio data:", error);
-      mainWindow.webContents.send(
-        "deepgram-error",
-        "Failed to send audio data"
-      );
+// Handle starting Deepgram connection
+ipcMain.handle("start-deepgram", async (event) => {
+  try {
+    console.log("🔗 Starting Deepgram connection...");
+    
+    // First clean up any existing state
+    cleanupDeepgramState();
+    
+    // Wait a moment for cleanup to complete
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    const result = await startDeepgramConnection();
+    if (result) {
+      console.log("✅ Deepgram connection started successfully");
+      return { success: true };
+    } else {
+      console.log("❌ Failed to start Deepgram connection");
+      return { success: false, error: "Failed to establish connection" };
     }
-  } else {
-    // Log connection state when trying to send audio
-    const state = deepgramSocket ? deepgramSocket.readyState : 'null';
-    console.log(`⚠️ Cannot send audio - WebSocket state: ${state}`);
+  } catch (error) {
+    console.error("Error starting Deepgram:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Handle stopping Deepgram connection
+ipcMain.handle("stop-deepgram", async (event) => {
+  try {
+    console.log("🔗 Stopping Deepgram connection...");
+    
+    // Use the global cleanup function
+    cleanupDeepgramState();
+    
+    // Notify renderers
+    mainWindow.webContents.send("deepgram-closed");
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send("deepgram-closed");
+    }
+    
+    console.log("✅ Deepgram connection stopped and state cleaned");
+    return { success: true };
+  } catch (error) {
+    console.error("Error stopping Deepgram:", error);
+    return { success: false, error: error.message };
   }
 });
 
@@ -1238,10 +1268,8 @@ function startMainApp() {
   createOverlayWindow();
   createTray();
   
-  // Wait a bit then start Deepgram
-  setTimeout(() => {
-    startDeepgramConnection();
-  }, 3000);
+  // Don't auto-start Deepgram - let user manually start it
+  console.log("🚀 App started - use the interface to connect to Deepgram");
 }
 
 // IPC Handlers for Onboarding
@@ -1302,8 +1330,8 @@ ipcMain.handle('start-tutorial-listening', async () => {
   if (deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
     return { success: true };
   } else {
-    await startDeepgramConnection();
-    return { success: true };
+    // Don't auto-start, let user start manually
+    return { success: false, error: "Please start voice recognition first" };
   }
 });
 
