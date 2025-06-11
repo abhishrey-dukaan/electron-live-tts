@@ -126,6 +126,32 @@
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 24px;
+        min-height: calc(100vh - 150px); /* Account for header and padding */
+      }
+
+      /* Left Column */
+      .left-column {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        height: 100%;
+      }
+
+      /* Right Column */
+      .right-column {
+        height: 100%;
+      }
+
+      /* Panel heights */
+      .right-column .panel {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .transcript-content {
+        flex: 1;
+        min-height: 0; /* Required for flex child to scroll properly */
       }
 
       .panel {
@@ -159,19 +185,19 @@
       /* Status Items */
       .status-list {
         display: flex;
-        flex-direction: column;
-        gap: 12px;
+        gap: 8px;
+        padding: 16px;
       }
 
       .status-item {
+        flex: 1;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        padding: 12px 16px;
         background: var(--bg-tertiary);
         border: 1px solid var(--border-muted);
         border-radius: var(--radius-medium);
-        transition: all 0.2s ease;
+        padding: 12px;
+        min-width: 0; /* Prevent flex items from overflowing */
       }
 
       .status-item:hover {
@@ -182,10 +208,11 @@
       .status-label {
         display: flex;
         align-items: center;
-        gap: 8px;
-        font-size: 14px;
+        gap: 6px;
+        font-size: 13px;
         font-weight: 500;
         color: var(--text-primary);
+        white-space: nowrap;
       }
 
       .status-label span {
@@ -195,14 +222,16 @@
       .status-value {
         display: flex;
         align-items: center;
-        gap: 8px;
-        font-size: 14px;
+        gap: 6px;
+        margin-left: auto;
+        font-size: 13px;
         font-weight: 500;
+        white-space: nowrap;
       }
 
       .indicator {
-        width: 6px;
-        height: 6px;
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
         flex-shrink: 0;
       }
@@ -471,129 +500,135 @@
 
       <!-- Main Content -->
       <div class="main-content">
-        <!-- Voice Recognition Panel -->
-        <div class="panel">
-          <div class="panel-header">
-            <span class="panel-icon">🎵</span>
-            <h2 class="panel-title">Voice Recognition</h2>
+        <!-- Left Column -->
+        <div class="left-column">
+          <!-- Voice Recognition Panel -->
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-icon">🎵</span>
+              <h2 class="panel-title">Voice Recognition</h2>
+            </div>
+            
+            <div class="status-list">
+              <div class="status-item">
+                <div class="status-label">
+                  <span>🔗</span>
+                  Connection
+                </div>
+                <div class="status-value">
+                  <span id="connection-status">Connected</span>
+                  <div class="indicator connected" id="connection-indicator"></div>
+                </div>
+              </div>
+              
+              <div class="status-item">
+                <div class="status-label">
+                  <span>🎙️</span>
+                  Recording
+                </div>
+                <div class="status-value">
+                  <span id="recording-status">Ready</span>
+                  <div class="indicator ready" id="recording-indicator"></div>
+                </div>
+              </div>
+              
+              <div class="status-item">
+                <div class="status-label">
+                  <span>⚡</span>
+                  Task Engine
+                </div>
+                <div class="status-value">
+                  <span id="task-status">Ready</span>
+                  <div class="indicator ready" id="task-indicator"></div>
+                </div>
+              </div>
+            </div>
           </div>
-          
-          <div class="status-list">
-            <div class="status-item">
-              <div class="status-label">
-                <span>🔗</span>
-                Connection
-              </div>
-              <div class="status-value">
-                <span id="connection-status">Connected</span>
-                <div class="indicator connected" id="connection-indicator"></div>
-              </div>
+
+          <!-- Controls Panel -->
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-icon">🎛️</span>
+              <h2 class="panel-title">Controls</h2>
             </div>
             
-            <div class="status-item">
-              <div class="status-label">
-                <span>🎙️</span>
-                Recording
-              </div>
-              <div class="status-value">
-                <span id="recording-status">Ready</span>
-                <div class="indicator ready" id="recording-indicator"></div>
-              </div>
-            </div>
-            
-            <div class="status-item">
-              <div class="status-label">
-                <span>⚡</span>
-                Task Engine
-              </div>
-              <div class="status-value">
-                <span id="task-status">Ready</span>
-                <div class="indicator ready" id="task-indicator"></div>
-              </div>
+            <div class="controls-grid">
+              <button class="control-btn danger" id="startBtn">
+                <span>🛑</span>
+                Stop Listening
+              </button>
+              
+              <button class="control-btn success" id="testYouTubeBtn">
+                <span>▶️</span>
+                Test YouTube
+              </button>
+              
+              <button class="control-btn primary" id="testMicBtn">
+                <span>🎤</span>
+                Test Microphone
+              </button>
+              
+              <button class="control-btn" id="clearLogBtn">
+                <span>🗑️</span>
+                Clear Log
+              </button>
+              
+              <button class="control-btn" id="runTestSuiteBtn">
+                <span>🧪</span>
+                Run Test Suite
+              </button>
+              
+              <button class="control-btn" id="helpBtn">
+                <span>❓</span>
+                Help & Commands
+              </button>
+              
+              <button class="control-btn wide" id="settingsBtn">
+                <span>⚙️</span>
+                Settings & Configuration
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- Controls Panel -->
-        <div class="panel">
-          <div class="panel-header">
-            <span class="panel-icon">🎛️</span>
-            <h2 class="panel-title">Controls</h2>
-          </div>
-          
-          <div class="controls-grid">
-            <button class="control-btn danger" id="startBtn">
-              <span>🛑</span>
-              Stop Listening
-            </button>
+        <!-- Right Column -->
+        <div class="right-column">
+          <!-- Live Transcript Panel -->
+          <div class="panel transcript-panel">
+            <div class="transcript-header">
+              <div class="transcript-title">
+                <span>📜</span>
+                Live Transcript
+              </div>
+              <div class="live-badge">
+                <div class="live-dot"></div>
+                <span>Live</span>
+              </div>
+            </div>
             
-            <button class="control-btn success" id="testYouTubeBtn">
-              <span>▶️</span>
-              Test YouTube
-            </button>
-            
-            <button class="control-btn primary" id="testMicBtn">
-              <span>🎤</span>
-              Test Microphone
-            </button>
-            
-            <button class="control-btn" id="clearLogBtn">
-              <span>🗑️</span>
-              Clear Log
-            </button>
-            
-            <button class="control-btn" id="runTestSuiteBtn">
-              <span>🧪</span>
-              Run Test Suite
-            </button>
-            
-            <button class="control-btn" id="helpBtn">
-              <span>❓</span>
-              Help & Commands
-            </button>
-            
-            <button class="control-btn wide" id="settingsBtn">
-              <span>⚙️</span>
-              Settings & Configuration
-            </button>
-          </div>
-        </div>
-      </div>
+            <!-- Transcript status line -->
+            <div id="transcript" style="padding: 10px 16px; min-height: 24px; font-style: italic; color: var(--text-primary); border-bottom: 1px solid var(--border-muted);">
+              Waiting for voice input...
+            </div>
 
-      <!-- Live Transcript Panel -->
-      <div class="transcript-panel">
-        <div class="transcript-header">
-          <div class="transcript-title">
-            <span>📜</span>
-            Live Transcript
-          </div>
-          <div class="live-badge">
-            <div class="live-dot"></div>
-            <span>Live</span>
-          </div>
-        </div>
-        
-        <!-- Transcript status line -->
-        <div id="transcript" style="padding: 10px 16px; min-height: 24px; font-style: italic; color: var(--text-primary); border-bottom: 1px solid var(--border-muted);">
-          Waiting for voice input...
-        </div>
-
-        <div class="transcript-content" id="logContainer">
-          <div class="log-entry success">
-            <div class="log-time">18:12</div>
-            <div class="log-message">✅ Voice Assistant initialized successfully</div>
-          </div>
-          <div class="log-entry info">
-            <div class="log-time">18:12</div>
-            <div class="log-message">🔗 Connected to Deepgram WebSocket</div>
-          </div>
-          <div class="log-entry primary">
-            <div class="log-time">18:12</div>
-            <div class="log-message">🎤 Audio system ready - listening for commands</div>
-          </div>
-          <div class="log-entry">
-            <div class="log-time">18:12</div>
-            <div class="log-message">System ready for voice commands...</div>
+            <div class="transcript-content" id="logContainer">
+              <div class="log-entry success">
+                <div class="log-time">18:12</div>
+                <div class="log-message">✅ Voice Assistant initialized successfully</div>
+              </div>
+              <div class="log-entry info">
+                <div class="log-time">18:12</div>
+                <div class="log-message">🔗 Connected to Deepgram WebSocket</div>
+              </div>
+              <div class="log-entry primary">
+                <div class="log-time">18:12</div>
+                <div class="log-message">🎤 Audio system ready - listening for commands</div>
+              </div>
+              <div class="log-entry">
+                <div class="log-time">18:12</div>
+                <div class="log-message">System ready for voice commands...</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
