@@ -193,37 +193,175 @@ Be concise and practical.`;
   async executeTask(transcript) {
     console.log(`📥 Task received: "${transcript}"`);
     
-    // Classify the command using simple pattern matching
-    const classification = this.classifier.classifyCommand(transcript);
-    console.log(`🔍 Command classification: ${classification.type} (confidence: ${classification.confidence}) - ${this.getClassificationReason(classification, transcript)}`);
+    try {
+      // Get execution command from LLM
+      const executionPlan = await this.getExecutionCommand(transcript);
+      console.log(`🔍 Execution plan:`, executionPlan);
 
-    if (classification.type === 'TASK_EXECUTION') {
-      return this.executeTaskDirectly(transcript);
-    } else if (classification.type === 'TEXT_RESPONSE') {
-      return this.handleTextResponse(transcript);
-    } else {
-      return this.handleAmbiguousCommand(transcript);
+      if (!executionPlan.success) {
+        return {
+          success: false,
+          error: executionPlan.error || 'Failed to generate execution command',
+          clarificationNeeded: true
+        };
+      }
+
+      // Execute the command based on the type
+      switch (executionPlan.type) {
+        case 'applescript':
+          return await this.executeAppleScript(executionPlan.command);
+        case 'shell':
+          return await this.executeShellCommand(executionPlan.command);
+        case 'keyboard_shortcut':
+          return await this.executeKeyboardShortcut(executionPlan.command);
+        default:
+          throw new Error(`Unknown execution type: ${executionPlan.type}`);
+      }
+    } catch (error) {
+      console.error('Task execution error:', error);
+      return {
+        success: false,
+        error: 'Failed to execute command. Please try again.',
+        clarificationNeeded: true
+      };
     }
   }
 
-  getClassificationReason(classification, transcript) {
-    const lowerTranscript = transcript.toLowerCase();
-    
-    if (classification.type === 'TASK_EXECUTION') {
-      if (lowerTranscript.includes('open') || lowerTranscript.includes('launch')) {
-        return 'Contains application launch keywords';
-      } else if (lowerTranscript.includes('quit') || lowerTranscript.includes('close')) {
-        return 'Contains application close keywords';
-      } else if (lowerTranscript.includes('youtube') || lowerTranscript.includes('search')) {
-        return 'Web-based task detected';
-      } else {
-        return 'Matches known task patterns';
+  async getExecutionCommand(transcript) {
+    try {
+      const prompt = `You are an expert in macOS automation. Generate the most appropriate command to execute the following voice command on macOS. You must respond with a JSON object containing:
+      1. type: One of 'applescript', 'shell', or 'keyboard_shortcut'
+      2. command: The actual command to execute
+      3. explanation: Brief explanation of what the command does
+
+      Important rules:
+      - For application control, prefer AppleScript
+      - For system operations, use appropriate shell commands
+      - For complex UI interactions, use keyboard shortcuts via AppleScript
+      - Always escape quotes and special characters properly
+      - Make commands as precise and reliable as possible
+      - Never use placeholder values - generate actual working commands
+
+      Examples:
+
+      Voice: "open safari and go to github"
+      Response: {
+        "type": "applescript",
+        "command": "tell application \\"Safari\\" to activate\\ntell application \\"System Events\\"\\nkeystroke \\"l\\" using command down\\ndelay 0.1\\nkeystroke \\"github.com\\"\\nkey code 36\\nend tell",
+        "explanation": "Opens Safari, focuses address bar with Cmd+L, types github.com and presses return"
       }
-    } else if (classification.type === 'TEXT_RESPONSE') {
-      return 'Question pattern detected';
-    } else {
-      return 'No clear pattern match';
+
+      Voice: "take a screenshot"
+      Response: {
+        "type": "shell",
+        "command": "screencapture ~/Desktop/screenshot-$(date +%Y%m%d-%H%M%S).png",
+        "explanation": "Captures screen to Desktop with timestamp in filename"
+      }
+
+      Voice: "increase volume"
+      Response: {
+        "type": "applescript",
+        "command": "set volume output volume ((output volume of (get volume settings)) + 10)",
+        "explanation": "Increases system volume by 10%"
+      }
+
+      Voice command to execute: "${transcript}"
+
+      Respond with the most appropriate command in JSON format.`;
+
+      // Make API call to Groq
+      const response = await fetch('https://api.groq.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'claude-3-sonnet',
+          messages: [
+            { 
+              role: 'system', 
+              content: 'You are a macOS automation expert that generates precise execution commands. Always respond with valid JSON containing type, command, and explanation fields.'
+            },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.1,
+          max_tokens: 500,
+          response_format: { type: "json_object" }
+        })
+      });
+
+      const result = await response.json();
+      
+      if (!result.choices?.[0]?.message?.content) {
+        throw new Error('Invalid response from Groq API');
+      }
+
+      const executionPlan = JSON.parse(result.choices[0].message.content);
+      console.log('📋 Execution plan:', JSON.stringify(executionPlan, null, 2));
+
+      // Validate the execution plan
+      if (!executionPlan.type || !executionPlan.command || !executionPlan.explanation) {
+        throw new Error('Invalid execution plan format');
+      }
+
+      if (!['applescript', 'shell', 'keyboard_shortcut'].includes(executionPlan.type)) {
+        throw new Error(`Invalid execution type: ${executionPlan.type}`);
+      }
+
+      return {
+        success: true,
+        ...executionPlan
+      };
+
+    } catch (error) {
+      console.error('Failed to generate execution command:', error);
+      return {
+        success: false,
+        error: `Failed to generate execution command: ${error.message}`
+      };
     }
+  }
+
+  async executeAppleScript(script) {
+    return new Promise((resolve, reject) => {
+      exec(`osascript -e '${script}'`, (error, stdout, stderr) => {
+        if (error) {
+          console.error('AppleScript execution error:', error);
+          reject(error);
+        } else {
+          resolve({
+            success: true,
+            message: stdout.trim() || 'Command executed successfully'
+          });
+        }
+      });
+    });
+  }
+
+  async executeShellCommand(command) {
+    return new Promise((resolve, reject) => {
+      exec(command, (error, stdout, stderr) => {
+        if (error) {
+          console.error('Shell command execution error:', error);
+          reject(error);
+        } else {
+          resolve({
+            success: true,
+            message: stdout.trim() || 'Command executed successfully'
+          });
+        }
+      });
+    });
+  }
+
+  async executeKeyboardShortcut(shortcut) {
+    // Convert keyboard shortcut description to AppleScript
+    const script = `tell application "System Events"
+      ${shortcut}
+    end tell`;
+    
+    return this.executeAppleScript(script);
   }
 
   handleStopCommand(transcript) {
@@ -275,6 +413,19 @@ Be concise and practical.`;
     
     // Try more pattern matching without AI
     const lowerTranscript = transcript.toLowerCase();
+    
+    // Handle "can you" style questions for YouTube
+    if ((lowerTranscript.startsWith('can you') || lowerTranscript.startsWith('could you')) && 
+        (lowerTranscript.includes('play') || lowerTranscript.includes('search')) && 
+        (lowerTranscript.includes('youtube') || lowerTranscript.includes('youtube.com'))) {
+      console.log(`🎵 YouTube request detected in question format: ${transcript}`);
+      // Extract the search terms by removing the question prefix and YouTube reference
+      const searchTerms = transcript
+        .replace(/^can you |^could you /i, '')
+        .replace(/(on|at|in|from)?\s*(youtube|youtube\.com)\s*\??$/i, '')
+        .trim();
+      return this.webAutomation.executeYouTubeTask(searchTerms, this.onStepComplete);
+    }
     
     // Web patterns - use Playwright
     if (lowerTranscript.includes('youtube') || lowerTranscript.includes('search') || lowerTranscript.includes('google')) {
@@ -438,6 +589,7 @@ Be concise and practical.`;
   // Check for simple application commands that can be executed directly
   checkForSimpleApplicationCommand(transcript) {
     const lowerTranscript = transcript.toLowerCase();
+    console.log('Checking transcript for simple command:', lowerTranscript);
     
     // Application launch patterns
     const appLaunchPatterns = [
@@ -476,7 +628,9 @@ Be concise and practical.`;
     ];
     
     for (const pattern of appLaunchPatterns) {
+      console.log('Testing pattern:', pattern.pattern);
       if (pattern.pattern.test(lowerTranscript)) {
+        console.log('Pattern matched:', pattern);
         return {
           app: pattern.app,
           action: pattern.action,
@@ -484,6 +638,7 @@ Be concise and practical.`;
         };
       }
     }
+    console.log('No pattern matched');
     
     return null;
   }
@@ -551,6 +706,7 @@ Be concise and practical.`;
   async executeSimpleCommand(command) {
     try {
       console.log(`⚡ Executing simple command: ${command.action} ${command.app}`);
+      console.log('Command details:', command);
       
       let script;
       if (command.action === 'launch') {
@@ -564,8 +720,10 @@ Be concise and practical.`;
               end tell
             end if
           end tell'`;
+        console.log('Generated script:', script);
       } else if (command.action === 'quit') {
         script = `osascript -e 'tell application "${command.app}" to quit'`;
+        console.log('Generated script:', script);
       } else if (command.action === 'open') {
         // For folder/file operations
         if (command.app === 'Downloads') {
@@ -577,6 +735,7 @@ Be concise and practical.`;
         } else if (command.app === 'Trash') {
           script = `osascript -e 'tell application "Finder" to open trash'`;
         }
+        console.log('Generated script:', script);
       }
       
       if (!script) {
