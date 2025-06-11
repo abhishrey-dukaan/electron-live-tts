@@ -476,6 +476,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const testModelsBtn = document.getElementById("test-models-btn");
   const testResults = document.getElementById("test-results");
 
+  // Debug: Check if settings elements exist
+  console.log("Settings elements found:", {
+    settingsModal: !!settingsModal,
+    closeModalBtn: !!closeModalBtn,
+    systemPromptTextarea: !!systemPromptTextarea,
+    resetPromptBtn: !!resetPromptBtn,
+    cancelSettingsBtn: !!cancelSettingsBtn,
+    saveSettingsBtn: !!saveSettingsBtn,
+    textProviderSelect: !!textProviderSelect,
+    textModelSelect: !!textModelSelect,
+    imageProviderSelect: !!imageProviderSelect,
+    imageModelSelect: !!imageModelSelect,
+    testModelsBtn: !!testModelsBtn,
+    testResults: !!testResults
+  });
+
   let availableModels = {};
   let currentConfig = { textModel: null, imageModel: null };
 

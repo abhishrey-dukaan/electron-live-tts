@@ -12,6 +12,15 @@ require("dotenv").config();
 // Add Deepgram API key
 process.env.DEEPGRAM_API_KEY = 'a076385db3d2cb8e4eb9c4276b2eed2ae70d154c';
 
+// Import and configure Groq
+const Groq = require('groq-sdk');
+const groqClient = new Groq({
+  apiKey: process.env.GROQ_API_KEY || 'your-default-api-key'
+});
+
+// Initialize task orchestrator with Groq API key
+const taskOrchestrator = new TaskOrchestrator(process.env.GROQ_API_KEY || 'your-default-api-key');
+
 // Helper function to load saved system prompt
 function loadSavedSystemPrompt() {
   try {
@@ -43,7 +52,6 @@ let overlayWindow;
 let onboardingWindow;
 let deepgramSocket;
 let aiService;
-let taskOrchestrator;
 let atomicScriptGenerator;
 let visualGuidance;
 let tray = null;
@@ -148,7 +156,6 @@ function createWindow() {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY
   });
   
-  taskOrchestrator = new TaskOrchestrator(process.env.ANTHROPIC_API_KEY);
   atomicScriptGenerator = new AtomicScriptGenerator(process.env.ANTHROPIC_API_KEY);
   visualGuidance = new VisualGuidance(process.env.ANTHROPIC_API_KEY);
   
@@ -756,7 +763,7 @@ ipcMain.handle("execute-dynamic-task", async (event, transcript) => {
     
     // Check if this is a simple single-action task that can use atomic scripts
     const simpleActions = [
-      'open safari', 'open chrome', 'open firefox', 'open finder', 'open notes',
+      'open safari', 'open chrome', 'open firefox', 'open finder', 'open notes', 'open slack',
       'take screenshot', 'volume up', 'volume down', 'lock screen'
     ];
     
@@ -992,6 +999,7 @@ async function handleSimpleAction(transcript) {
   else if (lowerTranscript.includes('open firefox')) action = 'open_firefox';
   else if (lowerTranscript.includes('open finder')) action = 'open_finder';
   else if (lowerTranscript.includes('open notes')) action = 'open_notes';
+  else if (lowerTranscript.includes('open slack')) action = 'open_slack';
   else if (lowerTranscript.includes('take screenshot')) action = 'screenshot';
   else if (lowerTranscript.includes('volume up')) action = 'volume_up';
   else if (lowerTranscript.includes('volume down')) action = 'volume_down';
@@ -1347,4 +1355,15 @@ ipcMain.handle('execute-tutorial-command', async (event, command) => {
     console.error('Tutorial command error:', error);
     return { success: false, error: error.message };
   }
+});
+
+// Add this to your IPC handlers
+ipcMain.handle('get-groq-key', () => {
+  return GROQ_API_KEY;
+});
+
+ipcMain.handle('set-groq-key', (event, key) => {
+  // Update the key in the task orchestrator
+  taskOrchestrator.apiKey = key;
+  return { success: true };
 });

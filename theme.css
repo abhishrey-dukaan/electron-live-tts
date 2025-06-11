@@ -3,6 +3,7 @@
   --bg-primary: #0d1117;
   --bg-secondary: #161b22;
   --bg-tertiary: #21262d;
+  --bg-quaternary: #2d333b;
   --bg-hover: #30363d;
   --border-color: #30363d;
   --border-muted: #21262d;
@@ -18,7 +19,15 @@
   --accent-red: #da3633;
   --accent-red-hover: #f85149;
   --accent-blue: #0969da;
+  --accent-blue-hover: #1f7aec;
   --accent-orange: #fb8500;
+  --accent-orange-hover: #ff9d1a;
+
+  /* RGB values for transparency */
+  --accent-blue-rgb: 9, 105, 218;
+  --accent-purple-rgb: 139, 92, 246;
+  --accent-green-rgb: 35, 134, 54;
+  --accent-red-rgb: 218, 54, 51;
 
   /* Surfaces */
   --radius-small: 6px;
@@ -26,6 +35,17 @@
   --radius-large: 12px;
   --shadow-small: 0 2px 4px rgba(0,0,0,0.3);
   --shadow-medium: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow-large: 0 8px 24px rgba(0,0,0,0.5);
+
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
+  --transition-slow: 0.3s ease;
+
+  /* Z-indices */
+  --z-dropdown: 100;
+  --z-modal: 1000;
+  --z-tooltip: 1500;
 }
 
 /* ---- Global base ---- */
@@ -56,7 +76,7 @@ html,body {
   border: 1px solid var(--border-color);
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  transition: all 0.2s ease;
+  transition: all var(--transition-normal);
   cursor: pointer;
   text-decoration: none;
 }
@@ -70,6 +90,8 @@ html,body {
 .btn-green:hover { background: var(--accent-green-hover); }
 .btn-red      { background: var(--accent-red);    border-color: var(--accent-red);    color:#fff; }
 .btn-red:hover   { background: var(--accent-red-hover); }
+.btn-blue     { background: var(--accent-blue);   border-color: var(--accent-blue);   color:#fff; }
+.btn-blue:hover  { background: var(--accent-blue-hover); }
 
 /* Status chip */
 .chip {
@@ -82,6 +104,27 @@ html,body {
   font-weight: 600;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
+  transition: all var(--transition-fast);
+}
+
+.chip:hover {
+  background: var(--bg-hover);
+}
+
+/* Form elements */
+input, select, textarea {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-medium);
+  padding: 8px 12px;
+  font-size: 14px;
+  transition: all var(--transition-fast);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent-purple);
 }
 
 /* Scrollbar (consistent) */

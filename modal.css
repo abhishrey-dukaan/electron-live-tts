@@ -35,7 +35,7 @@
 }
 
 .modal-overlay.active .modal-content {
-    transform: scale(1);
+  transform: scale(1);
 }
 
 .modal-header {
@@ -50,6 +50,7 @@
 .modal-header h2 {
   font-size: 20px;
   font-weight: 600;
+  color: var(--text-primary);
 }
 
 .close-button {
@@ -60,6 +61,11 @@
   cursor: pointer;
   padding: 0;
   line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.close-button:hover {
+  color: var(--text-primary);
 }
 
 .modal-body {
@@ -72,40 +78,103 @@
   background: var(--bg-tertiary);
   padding: 16px;
   border-radius: var(--radius-medium);
+  margin-bottom: 16px;
 }
 
 .settings-section h3 {
   font-size: 16px;
   font-weight: 600;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 
-textarea, select {
+.settings-section:last-child {
+  margin-bottom: 0;
+}
+
+/* System Prompt */
+#system-prompt-textarea {
   width: 100%;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  min-height: 150px;
+  padding: 12px;
+  background: var(--bg-secondary);
   color: var(--text-primary);
-  padding: 8px 12px;
-  border-radius: var(--radius-small);
-  margin-bottom: 8px;
-}
-
-.model-selector {
-    display: grid;
-    grid-template-columns: 150px 1fr;
-    gap: 12px;
-    align-items: center;
-    margin-bottom: 8px;
-}
-
-.btn {
-  padding: 8px 16px;
-  border-radius: var(--radius-small);
   border: 1px solid var(--border-color);
+  border-radius: var(--radius-medium);
+  font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  margin-bottom: 12px;
+}
+
+#system-prompt-textarea:focus {
+  outline: none;
+  border-color: var(--accent-purple);
+}
+
+/* Model Configuration */
+.model-selector {
+  margin-bottom: 16px;
+}
+
+.model-selector:last-child {
+  margin-bottom: 0;
+}
+
+.model-selector label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.model-selector select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-medium);
+  font-size: 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.model-selector select:focus {
+  outline: none;
+  border-color: var(--accent-purple);
+}
+
+/* Testing Section */
+#test-results {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-medium);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-medium);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  cursor: pointer;
-  transition: background 0.2s ease;
+  margin-right: 8px;
+}
+
+.btn:last-child {
+  margin-right: 0;
 }
 
 .btn:hover {
@@ -113,33 +182,208 @@ textarea, select {
 }
 
 .btn-primary {
-    background: var(--accent-purple);
-    border-color: var(--accent-purple);
-    color: white;
+  background: var(--accent-purple);
+  color: white;
 }
 
 .btn-primary:hover {
-    background: var(--accent-purple-hover);
+  background: var(--accent-purple-hover);
 }
 
 .btn-secondary {
-    background: transparent;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
 }
 
+.btn-secondary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Modal footer */
 .modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
   margin-top: 24px;
   padding-top: 16px;
   border-top: 1px solid var(--border-muted);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
-#test-results {
-    margin-top: 12px;
-    padding: 12px;
-    background: var(--bg-primary);
-    border-radius: var(--radius-small);
-    min-height: 50px;
-    display: none;
+/* Tips section */
+.tips-section {
+  background: rgba(var(--accent-blue-rgb), 0.1);
+  border-radius: var(--radius-medium);
+  padding: 16px;
+}
+
+.tips-section h4 {
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.tips-section ul {
+  color: var(--text-secondary);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.tips-section li {
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tips-section li:last-child {
+  margin-bottom: 0;
+}
+
+/* Command tabs */
+.command-tab {
+  padding: 8px 16px;
+  border-radius: var(--radius-medium);
+  font-size: 14px;
+  font-weight: 500;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.command-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.command-tab.btn-primary {
+  background: var(--accent-purple);
+  color: white;
+  border-color: var(--accent-purple);
+}
+
+/* Command items */
+.command-item {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-medium);
+  padding: 12px;
+  margin-bottom: 8px;
+  transition: background-color 0.2s ease;
+}
+
+.command-item:hover {
+  background: var(--bg-hover);
+}
+
+.command-example {
+  font-family: monospace;
+  color: var(--accent-green);
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.command-description {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* Progress and achievements */
+.progress-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.progress-item:last-child {
+  border-bottom: none;
+}
+
+.progress-label {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.progress-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.achievement-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: var(--radius-medium);
+  background: var(--bg-secondary);
+  margin-bottom: 8px;
+}
+
+.achievement-icon {
+  font-size: 24px;
+}
+
+.achievement-info {
+  flex: 1;
+}
+
+.achievement-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.achievement-description {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.achievement-progress {
+  font-size: 12px;
+  color: var(--accent-purple);
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .modal-content {
+    width: 95%;
+    padding: 16px;
+  }
+
+  .model-selector {
+    flex-direction: column;
+  }
+
+  .model-selector select {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+
+  .btn {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 8px;
+  }
+
+  .btn:last-child {
+    margin-bottom: 0;
+  }
+
+  .modal-footer {
+    flex-direction: column;
+  }
+
+  .command-tabs {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .command-tab {
+    flex: 1;
+    min-width: calc(50% - 4px);
+    text-align: center;
+  }
 } 

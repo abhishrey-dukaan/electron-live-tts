@@ -57,32 +57,59 @@ class WebAutomation {
       const searchTerms = this.extractSearchTerms(transcript);
       console.log(`🔍 Searching for: ${searchTerms}`);
       
+      // Wait for and click the search box
+      await this.page.waitForSelector('input[name="search_query"]');
       const searchBox = await this.page.locator('input[name="search_query"]').first();
       await searchBox.click();
       await searchBox.fill(searchTerms);
       await searchBox.press('Enter');
       
-      await this.page.waitForSelector('#contents ytd-video-renderer', { timeout: 10000 });
+      // Wait for search results with increased timeout
+      await this.page.waitForSelector('#contents ytd-video-renderer', { timeout: 15000 });
       
       if (onStepComplete) {
         onStepComplete(steps[2], "completed");
         onStepComplete(steps[3], "active");
       }
       
-      // Step 4: Click first video
+      // Step 4: Click first video with retry mechanism
       console.log('▶️ Selecting first video...');
-      const firstVideo = await this.page.locator('#contents ytd-video-renderer').first();
-      await firstVideo.click();
+      let retryCount = 0;
+      const maxRetries = 3;
       
-      await this.page.waitForSelector('video', { timeout: 15000 });
+      while (retryCount < maxRetries) {
+        try {
+          const firstVideo = await this.page.locator('#contents ytd-video-renderer').first();
+          await firstVideo.click();
+          break;
+        } catch (error) {
+          console.log(`Retry ${retryCount + 1} for clicking video...`);
+          await this.page.waitForTimeout(1000);
+          retryCount++;
+          if (retryCount === maxRetries) throw error;
+        }
+      }
+      
+      // Wait for video player with increased timeout
+      await this.page.waitForSelector('video', { timeout: 20000 });
       
       if (onStepComplete) {
         onStepComplete(steps[3], "completed");
         onStepComplete(steps[4], "active");
       }
       
-      // Step 5: Ensure playback starts
-      await this.delay(2000);
+      // Step 5: Ensure playback starts and handle autoplay
+      await this.page.waitForTimeout(2000);
+      
+      // Check for and handle any autoplay dialogs or popups
+      try {
+        const playButton = await this.page.locator('.ytp-play-button');
+        if (await playButton.isVisible()) {
+          await playButton.click();
+        }
+      } catch (error) {
+        console.log('No play button interaction needed');
+      }
       
       if (onStepComplete) {
         onStepComplete(steps[4], "completed");
@@ -153,8 +180,10 @@ class WebAutomation {
   extractSearchTerms(transcript) {
     return transcript
       .toLowerCase()
-      .replace(/^(open|play|search|find|google|youtube)\s+/g, '')
-      .replace(/\s+(on youtube|on google|video|videos)\s*$/g, '')
+      // Remove common command prefixes
+      .replace(/^(open|play|search|find|google|youtube|can you|could you)\s+/g, '')
+      // Remove common command suffixes
+      .replace(/\s+(on youtube|on google|video|videos|dot com|\.com)\s*$/g, '')
       .trim() || transcript;
   }
 

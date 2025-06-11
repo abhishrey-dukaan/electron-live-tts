@@ -170,6 +170,7 @@ end tell`,
       'open_notes': 'tell application "Notes" to activate',
       'open_calendar': 'tell application "Calendar" to activate',
       'open_mail': 'tell application "Mail" to activate',
+      'open_slack': 'tell application "Slack" to activate',
       
       // System actions
       'lock_screen': 'tell application "System Events" to keystroke "q" using {control down, command down}',

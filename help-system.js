@@ -84,68 +84,74 @@ class HelpSystem {
     }
 
     createHelpUI() {
-        // Create help overlay
-        const helpOverlay = document.createElement('div');
-        helpOverlay.id = 'help-overlay';
-        helpOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 hidden';
-        helpOverlay.innerHTML = `
-            <div class="flex items-center justify-center min-h-screen p-4">
-                <div class="bg-gray-900 rounded-2xl p-6 max-w-4xl w-full max-h-screen overflow-y-auto">
-                    <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-2xl font-bold text-white">VoiceMac Help & Commands</h2>
-                        <button id="close-help" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+        // Create modal overlay
+        const modalOverlay = document.createElement('div');
+        modalOverlay.id = 'help-modal-overlay';
+        modalOverlay.className = 'modal-overlay';
+        
+        // Create modal content
+        const modalContent = document.createElement('div');
+        modalContent.className = 'modal-content';
+        modalContent.innerHTML = `
+            <div class="modal-header">
+                <h2>VoiceMac Help & Commands</h2>
+                <button class="close-button" id="close-help-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <div class="flex space-x-2 mb-4">
+                        <button class="command-tab btn btn-primary" data-tab="all">All</button>
+                        <button class="command-tab btn" data-tab="application">Apps</button>
+                        <button class="command-tab btn" data-tab="web">Web</button>
+                        <button class="command-tab btn" data-tab="system">System</button>
+                        <button class="command-tab btn" data-tab="files">Files</button>
                     </div>
-                    
-                    <div class="grid md:grid-cols-3 gap-6">
-                        <!-- Commands Panel -->
-                        <div class="md:col-span-2">
-                            <div class="mb-6">
-                                <div class="flex space-x-2 mb-4">
-                                    <button class="command-tab px-4 py-2 rounded-lg bg-purple-600 text-white" data-tab="all">All</button>
-                                    <button class="command-tab px-4 py-2 rounded-lg bg-gray-700 text-gray-300" data-tab="application">Apps</button>
-                                    <button class="command-tab px-4 py-2 rounded-lg bg-gray-700 text-gray-300" data-tab="web">Web</button>
-                                    <button class="command-tab px-4 py-2 rounded-lg bg-gray-700 text-gray-300" data-tab="system">System</button>
-                                    <button class="command-tab px-4 py-2 rounded-lg bg-gray-700 text-gray-300" data-tab="files">Files</button>
-                                </div>
-                                <div id="commands-list" class="space-y-3">
-                                    <!-- Commands will be populated here -->
-                                </div>
-                            </div>
+                    <div id="commands-list" class="space-y-3">
+                        <!-- Commands will be populated here -->
+                    </div>
+                </div>
+                
+                <div class="settings-section">
+                    <h3>Your Progress</h3>
+                    <div class="space-y-2 text-sm mt-3">
+                        <div class="flex justify-between">
+                            <span>Commands Used:</span>
+                            <span class="font-semibold" data-stat="totalCommands">0</span>
                         </div>
-                        
-                        <!-- Stats & Achievements Panel -->
-                        <div>
-                            <div class="bg-gray-800 rounded-xl p-4 mb-4">
-                                <h3 class="text-lg font-semibold text-white mb-3">Your Progress</h3>
-                                <div class="space-y-2 text-sm">
-                                    <div class="flex justify-between text-gray-300">
-                                        <span>Commands Used:</span>
-                                        <span class="text-white font-semibold">${this.userStats.totalCommands}</span>
-                                    </div>
-                                    <div class="flex justify-between text-gray-300">
-                                        <span>Success Rate:</span>
-                                        <span class="text-green-400 font-semibold">${this.getSuccessRate()}%</span>
-                                    </div>
-                                    <div class="flex justify-between text-gray-300">
-                                        <span>Apps Controlled:</span>
-                                        <span class="text-blue-400 font-semibold">${this.userStats.uniqueApps.size}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="bg-gray-800 rounded-xl p-4">
-                                <h3 class="text-lg font-semibold text-white mb-3">Achievements</h3>
-                                <div id="achievements-list" class="space-y-2">
-                                    <!-- Achievements will be populated here -->
-                                </div>
-                            </div>
+                        <div class="flex justify-between">
+                            <span>Success Rate:</span>
+                            <span class="font-semibold success-rate">0%</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Apps Controlled:</span>
+                            <span class="font-semibold unique-apps">0</span>
                         </div>
                     </div>
+                </div>
+                
+                <div class="settings-section">
+                    <h3>Achievements</h3>
+                    <div id="achievements-list" class="space-y-2 mt-3">
+                        <!-- Achievements will be populated here -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <div class="p-4 bg-blue-900 bg-opacity-50 rounded-lg">
+                    <h4 class="font-semibold mb-2">💡 Tips for Best Results</h4>
+                    <ul class="text-sm space-y-1">
+                        <li>• Speak clearly and naturally</li>
+                        <li>• Wait for 3 seconds of silence after each command</li>
+                        <li>• Use specific app names (e.g., "Safari" not "browser")</li>
+                        <li>• Commands work even when app is minimized</li>
+                    </ul>
                 </div>
             </div>
         `;
         
-        document.body.appendChild(helpOverlay);
+        modalOverlay.appendChild(modalContent);
+        document.body.appendChild(modalOverlay);
 
         // Create floating help button
         const helpButton = document.createElement('button');
@@ -154,12 +160,6 @@ class HelpSystem {
         helpButton.innerHTML = '?';
         helpButton.title = 'Help & Commands';
         document.body.appendChild(helpButton);
-
-        // Create suggestion tooltip
-        const suggestionTooltip = document.createElement('div');
-        suggestionTooltip.id = 'suggestion-tooltip';
-        suggestionTooltip.className = 'fixed bottom-20 right-4 bg-gray-900 text-white p-3 rounded-lg shadow-lg z-40 hidden max-w-xs';
-        document.body.appendChild(suggestionTooltip);
 
         this.populateCommands();
         this.populateAchievements();
@@ -170,12 +170,12 @@ class HelpSystem {
             this.toggleHelp();
         });
 
-        document.getElementById('close-help').addEventListener('click', () => {
+        document.getElementById('close-help-modal').addEventListener('click', () => {
             this.hideHelp();
         });
 
-        document.getElementById('help-overlay').addEventListener('click', (e) => {
-            if (e.target.id === 'help-overlay') {
+        document.getElementById('help-modal-overlay').addEventListener('click', (e) => {
+            if (e.target.id === 'help-modal-overlay') {
                 this.hideHelp();
             }
         });
@@ -183,6 +183,10 @@ class HelpSystem {
         // Command tab switching
         document.querySelectorAll('.command-tab').forEach(tab => {
             tab.addEventListener('click', () => {
+                document.querySelectorAll('.command-tab').forEach(t => {
+                    t.classList.remove('btn-primary');
+                });
+                tab.classList.add('btn-primary');
                 this.switchCommandTab(tab.dataset.tab);
             });
         });
@@ -210,14 +214,16 @@ class HelpSystem {
         categoriesToShow.forEach(cat => {
             if (!this.commands[cat]) return;
 
-            const categoryHeader = document.createElement('div');
-            categoryHeader.className = 'text-purple-400 font-semibold text-sm uppercase tracking-wide mb-2';
-            categoryHeader.textContent = cat.replace('_', ' ');
-            if (category === 'all') commandsList.appendChild(categoryHeader);
+            if (category === 'all') {
+                const categoryHeader = document.createElement('div');
+                categoryHeader.className = 'text-purple-400 font-semibold text-sm uppercase tracking-wide mb-2';
+                categoryHeader.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+                commandsList.appendChild(categoryHeader);
+            }
 
             this.commands[cat].forEach(cmd => {
                 const commandItem = document.createElement('div');
-                commandItem.className = 'bg-gray-800 rounded-lg p-3 hover:bg-gray-700 transition-colors cursor-pointer';
+                commandItem.className = 'bg-gray-800 rounded-lg p-3 hover:bg-gray-700 transition-colors';
                 commandItem.innerHTML = `
                     <div class="flex justify-between items-start">
                         <div class="flex-1">
@@ -272,15 +278,6 @@ class HelpSystem {
     }
 
     switchCommandTab(category) {
-        // Update tab appearance
-        document.querySelectorAll('.command-tab').forEach(tab => {
-            if (tab.dataset.tab === category) {
-                tab.className = 'command-tab px-4 py-2 rounded-lg bg-purple-600 text-white';
-            } else {
-                tab.className = 'command-tab px-4 py-2 rounded-lg bg-gray-700 text-gray-300';
-            }
-        });
-
         this.populateCommands(category);
     }
 
@@ -293,13 +290,15 @@ class HelpSystem {
     }
 
     showHelp() {
-        document.getElementById('help-overlay').classList.remove('hidden');
+        const modalOverlay = document.getElementById('help-modal-overlay');
+        modalOverlay.classList.add('active');
         this.isVisible = true;
         this.updateStats();
     }
 
     hideHelp() {
-        document.getElementById('help-overlay').classList.add('hidden');
+        const modalOverlay = document.getElementById('help-modal-overlay');
+        modalOverlay.classList.remove('active');
         this.isVisible = false;
     }
 
@@ -485,7 +484,7 @@ class HelpSystem {
     }
 
     updateStats() {
-        const statsElements = document.querySelectorAll('#help-overlay [data-stat]');
+        const statsElements = document.querySelectorAll('#help-modal-overlay [data-stat]');
         statsElements.forEach(el => {
             const stat = el.dataset.stat;
             if (this.userStats[stat] !== undefined) {
