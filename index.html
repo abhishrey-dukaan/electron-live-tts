@@ -118,6 +118,8 @@
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 24px;
+        flex-grow: 1;
+        min-height: 0;
       }
 
       /* Panels */
@@ -403,7 +405,7 @@
         flex: 0.8;
       }
 
-      .controls {
+      .controls-panel {
         flex: 1.2;
       }
 
@@ -442,9 +444,9 @@
                   <span>🔗</span>
                   Connection
                 </div>
-                <div class="status-value">
+                <div class="status-value" id="connection-status">
                   <span>Connected</span>
-                  <div class="status-indicator"></div>
+                  <div class="status-indicator" id="connection-indicator"></div>
                 </div>
               </div>
               <div class="status-item">
@@ -452,9 +454,9 @@
                   <span>🎙️</span>
                   Recording
                 </div>
-                <div class="status-value">
+                <div class="status-value" id="recording-status">
                   <span>Recording</span>
-                  <div class="status-indicator"></div>
+                  <div class="status-indicator" id="recording-indicator"></div>
                 </div>
               </div>
               <div class="status-item">
@@ -462,48 +464,54 @@
                   <span>⚡</span>
                   Task Engine
                 </div>
-                <div class="status-value">
+                <div class="status-value" id="task-status">
                   <span>Ready</span>
-                  <div class="status-indicator"></div>
+                  <div class="status-indicator" id="task-indicator"></div>
                 </div>
               </div>
             </div>
           </div>
 
           <!-- Controls -->
-          <div class="panel">
+          <div class="panel controls-panel">
             <div class="panel-header">
               <span>🎮</span>
               Controls
             </div>
             <div class="controls">
-              <button class="button stop" id="stopBtn">
+              <button class="button stop" id="startBtn">
                 <div class="button-content">
                   <span>⏹️</span>
                   Stop Listening
                 </div>
                 <span class="keyboard-shortcut">⌘ S</span>
               </button>
-              <button class="button youtube" id="testYoutubeBtn">
+              <button class="button youtube" id="testYouTubeBtn">
                 <div class="button-content">
                   <span>▶️</span>
                   Test YouTube
                 </div>
                 <span class="keyboard-shortcut">⌘ Y</span>
               </button>
-              <button class="button test" id="testMicrophoneBtn">
+              <button class="button test" id="testMicBtn">
                 <div class="button-content">
                   <span>🎤</span>
                   Test Microphone
                 </div>
                 <span class="keyboard-shortcut">⌘ M</span>
               </button>
-              <button class="button" id="runTestBtn">
+              <button class="button" id="runTestSuiteBtn">
                 <div class="button-content">
                   <span>✅</span>
                   Run Test Suite
                 </div>
                 <span class="keyboard-shortcut">⌘ T</span>
+              </button>
+              <button class="button" id="testGroqBtn">
+                <div class="button-content">
+                  <span>☁️</span>
+                  Test Groq API
+                </div>
               </button>
               <button class="button" id="clearLogBtn">
                 <div class="button-content">
@@ -544,11 +552,11 @@
                 <span>LIVE</span>
               </div>
             </div>
-            <div class="transcript-status">
+            <div class="transcript-status" id="transcript">
               Waiting for voice input...
             </div>
             <div class="transcript-content">
-              <div class="log-entries">
+              <div class="log-entries" id="logContainer">
                 <div class="log-entry">
                   <div class="log-time">22:21</div>
                   <div class="log-message success">✅ Voice Assistant initialized successfully</div>

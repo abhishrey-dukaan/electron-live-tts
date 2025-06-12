@@ -10,7 +10,7 @@ const VisualGuidance = require("./visual-guidance");
 require("dotenv").config();
 
 // Add Deepgram API key
-process.env.DEEPGRAM_API_KEY = 'a076385db3d2cb8e4eb9c4276b2eed2ae70d154c';
+// process.env.DEEPGRAM_API_KEY = 'a076385db3d2cb8e4eb9c4276b2eed2ae70d154c';
 
 // Import and configure Groq
 const Groq = require('groq-sdk');
@@ -96,7 +96,7 @@ function cleanupDeepgramState() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
-    height: 800,
+    height: 900,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -503,7 +503,7 @@ ipcMain.on("audio-data", (event, buffer) => {
     // Log audio data periodically
     const now = Date.now();
     if (now - lastAudioLogTime > 5000) {
-      console.log(`📊 Sent ${audioBuffer.length} bytes of audio data to Deepgram`);
+      // console.log(`📊 Sent ${audioBuffer.length} bytes of audio data to Deepgram`);
       lastAudioLogTime = now;
     }
   } catch (error) {
@@ -587,7 +587,10 @@ async function startDeepgramConnection() {
     deepgramSocket.on("message", (data) => {
       try {
         const response = JSON.parse(data);
-        console.log("Received transcript:", response.channel?.alternatives[0]?.transcript || "no transcript");
+        const transcript = response.channel?.alternatives[0]?.transcript;
+        if (transcript && transcript.trim() !== "") {
+          console.log("Received transcript:", transcript);
+        }
         
         mainWindow.webContents.send("deepgram-transcript", response);
         if (overlayWindow && !overlayWindow.isDestroyed()) {
@@ -761,23 +764,8 @@ ipcMain.handle("execute-dynamic-task", async (event, transcript) => {
   try {
     console.log("Executing dynamic task:", transcript);
     
-    // Check if this is a simple single-action task that can use atomic scripts
-    const simpleActions = [
-      'open safari', 'open chrome', 'open firefox', 'open finder', 'open notes', 'open slack',
-      'take screenshot', 'volume up', 'volume down', 'lock screen'
-    ];
-    
-    const isSimpleAction = simpleActions.some(action => 
-      transcript.toLowerCase().includes(action)
-    );
-
-    if (isSimpleAction) {
-      // Handle simple actions with predefined scripts
-      return await handleSimpleAction(transcript);
-    } else {
-      // Handle complex tasks with the orchestrator
-      return await taskOrchestrator.executeTask(transcript);
-    }
+    // Handle all tasks with the orchestrator
+    return await taskOrchestrator.executeTask(transcript);
   } catch (error) {
     console.error("Dynamic task execution error:", error);
     return { success: false, error: error.message };
@@ -989,6 +977,35 @@ ipcMain.handle("test-all-models", async (event) => {
   }
 });
 
+// Test Groq API connection
+ipcMain.handle("test-groq-api", async (event) => {
+  try {
+    if (!taskOrchestrator || !taskOrchestrator.apiKey) {
+      throw new Error("Groq API key not configured in TaskOrchestrator.");
+    }
+
+    const response = await fetch('https://api.groq.com/openai/v1/models', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${taskOrchestrator.apiKey}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`Groq API test failed with status ${response.status}: ${errorBody}`);
+    }
+
+    const result = await response.json();
+    console.log('Groq API Test Success:', result);
+    return { success: true, message: 'Groq API connection successful!', data: result.data };
+
+  } catch (error) {
+    console.error("Groq API test error:", error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Handle simple actions with atomic scripts
 async function handleSimpleAction(transcript) {
   const lowerTranscript = transcript.toLowerCase();
@@ -1185,19 +1202,23 @@ ipcMain.handle("execute-script", async (event, script) => {
 
 // Add functions to send screenshot analysis notifications
 function notifyScreenshotAnalysisStart(failedStep) {
-  mainWindow.webContents.send("screenshot-analysis-start", { failedStep });
-  if (overlayWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("screenshot-analysis-start", { failedStep });
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send("screenshot-analysis-start", { failedStep });
   }
 }
 
 function notifyScreenshotAnalysisComplete(success, suggestedAction, failureReason) {
-  mainWindow.webContents.send("screenshot-analysis-complete", { 
-    success, 
-    suggestedAction, 
-    failureReason 
-  });
-  if (overlayWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("screenshot-analysis-complete", { 
+      success, 
+      suggestedAction, 
+      failureReason 
+    });
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send("screenshot-analysis-complete", { 
       success, 
       suggestedAction, 
@@ -1210,29 +1231,37 @@ function notifyVisualFallbackResult(success, action, error) {
   const eventName = success ? "visual-fallback-success" : "visual-fallback-failed";
   const data = success ? { action } : { error };
   
-  mainWindow.webContents.send(eventName, data);
-  if (overlayWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(eventName, data);
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send(eventName, data);
   }
 }
 
 function notifyScreenshotCapture(status, data) {
-  mainWindow.webContents.send("screenshot-capture", { status, data });
-  if (overlayWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("screenshot-capture", { status, data });
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send("screenshot-capture", { status, data });
   }
 }
 
 function notifyClaudeAnalysis(status, data) {
-  mainWindow.webContents.send("claude-analysis", { status, data });
-  if (overlayWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("claude-analysis", { status, data });
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send("claude-analysis", { status, data });
   }
 }
 
 function notifyCloudUpload(status, data) {
-  mainWindow.webContents.send("cloud-upload", { status, data });
-  if (overlayWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("cloud-upload", { status, data });
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send("cloud-upload", { status, data });
   }
 }

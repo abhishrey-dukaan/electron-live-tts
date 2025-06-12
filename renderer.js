@@ -14,6 +14,7 @@ if (!window.electronAPI) {
     executeDynamicTask: (d) => ipcRenderer.invoke("execute-dynamic-task", d),
     executeWebTask: (type, p) => ipcRenderer.invoke("execute-web-task", type, p),
     stopTask: () => ipcRenderer.invoke("stop-task"),
+    testGroqApi: () => ipcRenderer.invoke("test-groq-api"),
     // Model configuration
     getAvailableModels: () => ipcRenderer.invoke("get-available-models"),
     getModelConfig: () => ipcRenderer.invoke("get-model-config"),
@@ -51,6 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const clearLogBtn = document.getElementById("clearLogBtn");
   const settingsBtn = document.getElementById("settingsBtn");
   const runTestSuiteBtn = document.getElementById("runTestSuiteBtn");
+  const testGroqBtn = document.getElementById("testGroqBtn");
   const helpBtn = document.getElementById("helpBtn");
   const logContainer = document.getElementById("logContainer");
   
@@ -93,10 +95,10 @@ document.addEventListener("DOMContentLoaded", () => {
     addLogEntry("✅ Voice Assistant initialized successfully", "success");
     addLogEntry("🔗 Connecting to Deepgram WebSocket...", "info");
     addLogEntry("🎤 Audio system ready - listening for commands", "primary");
-    addLogEntry("System ready for voice commands...", "");
     
     // Setup event listeners
     setupEventListeners();
+    updateButtonStates();
     
     // Auto-start recording
     setTimeout(() => {
@@ -116,7 +118,8 @@ document.addEventListener("DOMContentLoaded", () => {
       clearLogBtn: !!clearLogBtn,
       settingsBtn: !!settingsBtn,
       runTestSuiteBtn: !!runTestSuiteBtn,
-      helpBtn: !!helpBtn
+      helpBtn: !!helpBtn,
+      testGroqBtn: !!testGroqBtn
     });
 
     if (startBtn) {
@@ -294,6 +297,28 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("❌ Help button not found!");
     }
   
+    if (testGroqBtn) {
+      console.log("✅ Attaching Groq test button listener");
+      testGroqBtn.addEventListener("click", async (e) => {
+        console.log("☁️ Groq API test button clicked!");
+        e.preventDefault();
+        addLogEntry("🧪 Testing Groq API connection...", "info");
+        try {
+          const result = await window.electronAPI.testGroqApi();
+          if (result.success) {
+            addLogEntry("✅ Groq API connection successful!", "success");
+            addLogEntry(`✅ Found ${result.data.length} models available.`, "success");
+          } else {
+            addLogEntry(`❌ Groq API test failed: ${result.error}`, "error");
+          }
+        } catch (error) {
+          addLogEntry(`❌ Groq API test error: ${error.message}`, "error");
+        }
+      });
+    } else {
+      console.log("❌ Groq test button not found!");
+    }
+  
     console.log("✅ All event listeners attached!");
   }
 
@@ -451,11 +476,11 @@ document.addEventListener("DOMContentLoaded", () => {
   function updateButtonStates() {
     if (startBtn) {
       if (isRecording) {
-        startBtn.innerHTML = '<span>🛑</span>Stop Listening';
-        startBtn.className = 'control-btn danger';
+        startBtn.innerHTML = '<span>⏹️</span>Stop Listening';
+        startBtn.className = 'button stop';
       } else {
         startBtn.innerHTML = '<span>🎤</span>Start Listening';
-        startBtn.className = 'control-btn success';
+        startBtn.className = 'button youtube';
       }
     }
   }
@@ -1569,21 +1594,10 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
     try {
       addLogEntry(`🚀 Processing command: "${text}"`);
 
-      // Check for stop/cancel commands first
-      if (isStopCommand(text)) {
-        return await handleStopCommand(text);
-      }
-
-      // Check for web-specific tasks first
-      if (isWebTask(text)) {
-        return await executeWebTask(text);
-      }
-
-      // Use the new dynamic task execution system
-      addLogEntry("🤖 Analyzing task and breaking into steps...");
+      // Use the task orchestrator for all commands
       const result = await window.electronAPI.executeDynamicTask(text);
       
-      console.log("Dynamic Task Result:", result);
+      console.log("Task Result:", result);
 
       if (!result.success) {
         addLogEntry(`❌ Task Error: ${result.error}`, "error");

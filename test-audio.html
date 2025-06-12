@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audio Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        #audioLevel {
+            width: 300px;
+            height: 20px;
+            background: #eee;
+            margin: 10px 0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        #audioBar {
+            width: 0%;
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.1s;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success { background: #e8f5e9; color: #2e7d32; }
+        .error { background: #ffebee; color: #c62828; }
+        .info { background: #e3f2fd; color: #1565c0; }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            background: #2196F3;
+            color: white;
+            cursor: pointer;
+            margin-right: 8px;
+        }
+        button:disabled {
+            background: #bdbdbd;
+            cursor: not-allowed;
+        }
+        #debugInfo {
+            margin-top: 20px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            background: #fff;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h2>Audio System Test</h2>
+    <button id="testBtn">Test Microphone</button>
+    <button id="stopBtn" disabled>Stop Test</button>
+    
+    <div id="audioLevel">
+        <div id="audioBar"></div>
+    </div>
+    
+    <div id="status" class="status info">Click "Test Microphone" to begin...</div>
+    <div id="debugInfo"></div>
+    
+    <script>
+        let audioContext = null;
+        let audioStream = null;
+        let isRecording = false;
+        
+        const testBtn = document.getElementById('testBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const audioBar = document.getElementById('audioBar');
+        const status = document.getElementById('status');
+        const debugInfo = document.getElementById('debugInfo');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            debugInfo.innerHTML += `[${timestamp}] ${message}\n`;
+            debugInfo.scrollTop = debugInfo.scrollHeight;
+        }
+        
+        async function startAudioTest() {
+            try {
+                status.className = 'status info';
+                status.textContent = 'Requesting microphone permission...';
+                
+                // Request permission through IPC
+                const permissionGranted = await window.electron.requestMicrophone();
+                if (!permissionGranted) {
+                    throw new Error('Microphone permission denied');
+                }
+                
+                log('Microphone permission granted');
+                status.textContent = 'Initializing audio system...';
+                
+                // Request microphone access with specific constraints
+                audioStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: 16000,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+                
+                // Create audio context
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 16000,
+                    latencyHint: 'interactive'
+                });
+                
+                // Get audio track info
+                const track = audioStream.getAudioTracks()[0];
+                const settings = track.getSettings();
+                log('Audio track settings: ' + JSON.stringify(settings, null, 2));
+                
+                status.className = 'status success';
+                status.textContent = 'Microphone connected! Monitoring audio levels...';
+                
+                // Create analyzer
+                const analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(audioStream);
+                source.connect(analyser);
+                
+                analyser.fftSize = 256;
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                
+                isRecording = true;
+                testBtn.disabled = true;
+                stopBtn.disabled = false;
+                
+                // Monitor audio levels
+                function checkAudio() {
+                    if (!isRecording) return;
+                    
+                    analyser.getByteFrequencyData(dataArray);
+                    const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+                    const level = average / 128.0; // Normalize to 0-1
+                    
+                    audioBar.style.width = `${level * 100}%`;
+                    
+                    if (level > 0.1) {
+                        log(`Audio level: ${level.toFixed(3)}`);
+                    }
+                    
+                    requestAnimationFrame(checkAudio);
+                }
+                
+                checkAudio();
+                
+            } catch (error) {
+                console.error('Audio test error:', error);
+                log('Error: ' + error.message, 'error');
+                status.className = 'status error';
+                status.textContent = `Error: ${error.message}`;
+                testBtn.disabled = false;
+                stopBtn.disabled = true;
+            }
+        }
+        
+        function stopAudioTest() {
+            isRecording = false;
+            
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            audioBar.style.width = '0%';
+            status.className = 'status info';
+            status.textContent = 'Audio test stopped';
+            testBtn.disabled = false;
+            stopBtn.disabled = true;
+            log('Audio test stopped');
+        }
+        
+        testBtn.addEventListener('click', startAudioTest);
+        stopBtn.addEventListener('click', stopAudioTest);
+        
+        // Handle errors
+        window.onerror = function(msg, url, line) {
+            log(`Error: ${msg} (${url}:${line})`, 'error');
+            return false;
+        };
+    </script>
+</body>
+</html> 
