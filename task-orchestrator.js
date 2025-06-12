@@ -155,41 +155,6 @@ class TaskOrchestrator {
     return `Recent command history:\n${formatted}`;
   }
 
-  updateSystemPrompt(newPrompt) {
-    this.customSystemPrompt = newPrompt;
-    console.log("📝 Task Orchestrator: System prompt updated");
-  }
-
-  getSystemPrompt() {
-    return this.customSystemPrompt || this.getDefaultTaskAnalysisPrompt();
-  }
-
-  getDefaultTaskAnalysisPrompt() {
-    return `You are an expert macOS automation assistant. Analyze user commands and break them into simple, executable steps.
-
-For each task, provide a JSON response with:
-1. "steps" array - each step should be simple and actionable
-2. "type" - either "application", "web", "system", or "complex"
-3. "description" - brief explanation of what will be done
-
-Web tasks should use browser automation. System tasks use AppleScript/shell commands.
-
-Important rules:
-- For any task involving a web browser (searching, navigating, interacting with a site), you MUST use the 'playwright' type. The 'command' for this type MUST be an array of objects.
-- Each object in the 'command' array MUST have an 'action' and a 'selector' (unless the action is 'navigate' or 'wait').
-- Supported actions are: 'navigate' (requires 'url'), 'click', 'type' (requires 'text' and 'selector'), 'press' (requires 'key' and 'selector'), and 'wait' (requires 'duration').
-- Example of a valid Playwright command: '[{"action": "navigate", "url": "https://google.com"}, {"action": "type", "selector": "input[name=q]", "text": "fastest language model"}, {"action": "press", "selector": "input[name=q]", "key": "Enter"}]'
-- CRITICAL RULE: You MUST NOT infer or guess the user's intent. If a command is not a clear, explicit instruction to control a macOS application or web browser, you MUST respond with a valid JSON object containing an 'error' field. Example: '{"type": "error", "command": "", "explanation": "Command is ambiguous or not an executable task."}'
-- For non-web tasks, use 'applescript' or 'shell' types. For application control, always use 'activate' to ensure the app is brought to the foreground (e.g., 'tell application "Notes" to activate').
-
-Examples:
-- "open youtube" → {"type": "web", "steps": ["Open browser", "Navigate to youtube.com"], "description": "Opening YouTube in browser"}
-- "quit slack" → {"type": "application", "steps": ["Quit Slack application"], "description": "Closing Slack"}
-- "take screenshot" → {"type": "system", "steps": ["Capture screen"], "description": "Taking screenshot"}
-
-Be concise and practical.`;
-  }
-
   setCallbacks(onStepComplete, onTaskComplete, onError) {
     this.onStepComplete = onStepComplete;
     this.onTaskComplete = onTaskComplete;
@@ -260,8 +225,23 @@ Be concise and practical.`;
       - Example of a valid Playwright command: '[{"action": "navigate", "url": "https://google.com"}, {"action": "type", "selector": "input[name=q]", "text": "fastest language model"}, {"action": "press", "selector": "input[name=q]", "key": "Enter"}]'
       - CRITICAL RULE: You MUST NOT infer or guess the user's intent. If a command is not a clear, explicit instruction, you MUST respond with a valid JSON object containing an 'error' field. Example: {"type": "error", "command": "", "explanation": "Command is ambiguous or not an executable task."}
       - For non-web tasks, use 'applescript' or 'shell' types. For application control, always use 'activate' to ensure the app is brought to the foreground (e.g., 'tell application "Notes" to activate').
+      - To minimize a window, DO NOT use 'keystroke "m"'. Instead, tell System Events to click the minimize button of the target window. For the current app, use 'front process'.
       - For web automation, you MUST first activate the browser window before executing any other steps.
       
+      Voice: "increase brightness"
+      Response: {
+        "type": "shell",
+        "command": "CURRENT=$(brightness -l | awk '{print $NF}'); NEW=$(echo \"$CURRENT + 0.1\" | bc); brightness $NEW",
+        "explanation": "Increases screen brightness by 10% using the 'brightness' command-line tool."
+      }
+
+      Voice: "decrease brightness"
+      Response: {
+        "type": "shell",
+        "command": "CURRENT=$(brightness -l | awk '{print $NF}'); NEW=$(echo \"$CURRENT - 0.1\" | bc); brightness $NEW",
+        "explanation": "Decreases screen brightness by 10% using the 'brightness' command-line tool."
+      }
+
       Voice: "can you open safari and go to github"
       Response: {
         "type": "applescript",
@@ -288,6 +268,20 @@ Be concise and practical.`;
         "type": "applescript",
         "command": "set volume output volume ((output volume of (get volume settings)) + 10)",
         "explanation": "Increases system volume by 10%"
+      }
+
+      Voice: "minimize this window"
+      Response: {
+        "type": "applescript",
+        "command": "tell application \"System Events\" to tell front process to click (first button of window 1 whose subrole is \"AXMinimizeButton\")",
+        "explanation": "Minimizes the frontmost application window."
+      }
+
+      Voice: "minimize voice assistant"
+      Response: {
+        "type": "applescript",
+        "command": "tell application \"System Events\" to tell process \"VoiceMac Assistant\" to click (first button of window 1 whose subrole is \"AXMinimizeButton\")",
+        "explanation": "Minimizes the Voice Assistant application window."
       }
 
       Voice command to execute: "${transcript}"

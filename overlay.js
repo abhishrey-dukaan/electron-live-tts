@@ -1286,12 +1286,3 @@ document.addEventListener("DOMContentLoaded", () => {
   
   console.log("Overlay widget initialized with multi-step task support");
 });
-
-// Add audio level meter update handler
-ipcRenderer.on("audio-level", (event, level) => {
-  const meter = document.getElementById('audio-meter');
-  if (!meter) return;
-  // Clamp level between 0 and 1, scale to %
-  const pct = Math.min(1, Math.max(0, level)) * 100;
-  meter.style.width = pct + '%';
-}); 

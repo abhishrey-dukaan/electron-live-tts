@@ -39,6 +39,7 @@ if (!window.electronAPI) {
     onCommandProcessing: (cmd) => ipcRenderer.send("command-processing", cmd),
     onCommandSuccess: (cmd) => ipcRenderer.send("command-success", cmd),
     onCommandError: (cmd, err) => ipcRenderer.send("command-error", cmd, err),
+    sendAudioLevel: (level) => ipcRenderer.send("audio-level", level),
   };
 }
 
@@ -1063,6 +1064,9 @@ Now await the user's voice command and generate the corresponding \`actionSteps\
 
       // Update visual feedback
       updateAudioLevel(audioLevel);
+      
+      // Send audio level to main process for the overlay
+      window.electronAPI.sendAudioLevel(audioLevel);
       
     } catch (error) {
       console.error("Error processing audio:", error);

@@ -162,9 +162,9 @@ function createWindow() {
   // Load saved system prompt from storage if available
   const savedPrompt = loadSavedSystemPrompt();
   if (savedPrompt) {
-    aiService.updateSystemPrompt(savedPrompt);
-    taskOrchestrator.updateSystemPrompt(savedPrompt);
-    console.log("📝 Loaded saved system prompt on startup");
+    // aiService.updateSystemPrompt(savedPrompt);
+    // taskOrchestrator.updateSystemPrompt(savedPrompt);
+    console.log("📝 Loaded saved system prompt on startup (functionality disabled)");
   }
 
   // Set up task orchestrator callbacks
@@ -862,12 +862,12 @@ ipcMain.handle("update-system-prompt", async (event, newPrompt) => {
     
     // Update the AI service with the new prompt
     if (aiService) {
-      aiService.updateSystemPrompt(newPrompt);
+      // aiService.updateSystemPrompt(newPrompt);
     }
     
     // Update task orchestrator and other services that might use prompts
     if (taskOrchestrator) {
-      taskOrchestrator.updateSystemPrompt(newPrompt);
+      // taskOrchestrator.updateSystemPrompt(newPrompt);
     }
     
     // Save to persistent storage
@@ -938,7 +938,7 @@ ipcMain.handle("get-model-config", async (event) => {
 ipcMain.handle("set-text-model", async (event, provider, model) => {
   try {
     if (aiService && aiService.setTextModel) {
-      aiService.setTextModel(provider, model);
+      // aiService.setTextModel(provider, model);
       return { success: true };
     }
     return { success: false, error: "AI service not available" };
@@ -952,7 +952,7 @@ ipcMain.handle("set-text-model", async (event, provider, model) => {
 ipcMain.handle("set-image-model", async (event, provider, model) => {
   try {
     if (aiService && aiService.setImageModel) {
-      aiService.setImageModel(provider, model);
+      // aiService.setImageModel(provider, model);
       return { success: true };
     }
     return { success: false, error: "AI service not available" };
