@@ -439,19 +439,28 @@ document.addEventListener("DOMContentLoaded", () => {
   // Update status functions
   function updateConnectionStatus(status) {
     if (connectionStatus) {
-      connectionStatus.textContent = status;
+      const textElement = connectionStatus.querySelector('span');
+      if (textElement) {
+        textElement.textContent = status;
+      }
     }
   }
 
   function updateRecordingStatus(status) {
     if (recordingStatus) {
-      recordingStatus.textContent = status;
+      const textElement = recordingStatus.querySelector('span');
+      if (textElement) {
+        textElement.textContent = status;
+      }
     }
   }
 
   function updateTaskStatus(status) {
     if (taskStatus) {
-      taskStatus.textContent = status;
+      const textElement = taskStatus.querySelector('span');
+      if (textElement) {
+        textElement.textContent = status;
+      }
     }
   }
 
