@@ -139,7 +139,7 @@ CAPABILITIES & EXAMPLES:
   tell application "System Events"
     keystroke "k" using command down
     delay 0.5
-    type text "john"
+    keystroke "john"
     delay 0.5
     keystroke return
   end tell
@@ -150,10 +150,10 @@ CAPABILITIES & EXAMPLES:
   tell application "System Events"
     keystroke "n" using command down
     delay 1
-    type text "sarah@example.com"
+    keystroke "sarah@example.com"
     keystroke tab
     keystroke tab
-    type text "Quick message"
+    keystroke "Quick message"
     keystroke tab
   end tell
 
@@ -179,10 +179,10 @@ CAPABILITIES & EXAMPLES:
   tell application "System Events"
     keystroke "l" using command down
     delay 0.5
-    type text "google.com"
+    keystroke "google.com"
     keystroke return
     delay 2
-    type text "weather"
+    keystroke "weather"
     keystroke return
   end tell
 
@@ -205,6 +205,26 @@ CAPABILITIES & EXAMPLES:
 - Add appropriate delays (delay 0.5 to delay 2) between actions
 - Use proper element targeting: button "OK", menu item "Save", etc.
 
+🔹 ROBUST MULTI-STEP AUTOMATION (CRITICAL CASES):
+- For creating a new note in Notes, use:
+  tell application "Notes" to activate
+  delay 1
+  tell application "System Events"
+    keystroke "n" using command down
+    delay 0.5
+    keystroke "Your note text here"
+  end tell
+
+- For minimizing the frontmost window:
+  tell application "System Events" to tell front process to set miniaturized of window 1 to true
+  -- or, if that fails, use:
+  tell application "System Events" to tell process "AppName" to click (first button of window 1 whose subrole is "AXMinimizeButton")
+
+- Always add delays between UI actions for reliability.
+- If a direct AppleScript command fails, fall back to GUI scripting with System Events.
+- If a script is likely to fail due to accessibility, output a helpful error message suggesting the user enable accessibility permissions for "VoiceMac Assistant" in System Preferences.
+- Always output valid, robust AppleScript that works on modern macOS.
+
 CRITICAL RULES:
 1. Output ONLY the AppleScript - no explanations, no markdown
 2. Use proper AppleScript syntax with tell blocks
@@ -212,7 +232,8 @@ CRITICAL RULES:
 4. Handle multi-step processes logically
 5. Use exact application names: "Slack", "Safari", "Google Chrome", "Microsoft Word", etc.
 6. For GUI automation, always use "System Events"
-7. Break complex tasks into clear steps with appropriate delays`;
+7. Break complex tasks into clear steps with appropriate delays
+8. For tricky tasks (like creating notes or minimizing windows), use robust, multi-step AppleScript as shown above.`;
   }
 
   // Make API request based on provider

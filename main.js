@@ -12,14 +12,8 @@ require("dotenv").config();
 // Add Deepgram API key
 // process.env.DEEPGRAM_API_KEY = 'a076385db3d2cb8e4eb9c4276b2eed2ae70d154c';
 
-// Import and configure Groq
-const Groq = require('groq-sdk');
-const groqClient = new Groq({
-  apiKey: process.env.GROQ_API_KEY || 'your-default-api-key'
-});
-
-// Initialize task orchestrator with Groq API key
-const taskOrchestrator = new TaskOrchestrator(process.env.GROQ_API_KEY || 'your-default-api-key');
+// Initialize task orchestrator (now uses OpenAI internally)
+const taskOrchestrator = new TaskOrchestrator();
 
 // Helper function to load saved system prompt
 function loadSavedSystemPrompt() {

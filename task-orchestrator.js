@@ -1,10 +1,11 @@
 const { exec } = require('child_process');
-const fs = require('fs').promises;
+const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const FormData = require('form-data');
 const WebAutomation = require('./web-automation');
 const fetch = require('node-fetch');
+const OpenAI = require('openai');
 
 class CommandClassifier {
   constructor() {
@@ -118,8 +119,7 @@ class CommandClassifier {
 }
 
 class TaskOrchestrator {
-  constructor(apiKey) {
-    this.apiKey = apiKey;
+  constructor() {
     this.currentTask = null;
     this.isExecuting = false;
     this.shouldStop = false;
@@ -134,6 +134,16 @@ class TaskOrchestrator {
     
     // Web automation instance
     this.webAutomation = new WebAutomation();
+
+    this.openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
+    this.screenshotDir = path.join(__dirname, 'screenshots');
+    
+    // Ensure screenshots directory exists
+    if (!fs.existsSync(this.screenshotDir)) {
+      fs.mkdirSync(this.screenshotDir, { recursive: true });
+    }
   }
 
   setHistoryContext(historyContext) {
@@ -169,8 +179,19 @@ class TaskOrchestrator {
     console.log(`📥 Task received: "${transcript}"`);
     
     try {
-      // Get execution command from LLM
-      const executionPlan = await this.getExecutionCommand(transcript);
+      // Check if this is a UI interaction command that would benefit from vision
+      const isUICommand = this.isUIInteractionCommand(transcript);
+      
+      let executionPlan;
+      
+      if (isUICommand) {
+        console.log(`🔍 UI interaction detected, using vision-first approach for: "${transcript}"`);
+        executionPlan = await this.getExecutionCommandWithVision(transcript);
+      } else {
+        console.log(`⚡ Standard command execution for: "${transcript}"`);
+        executionPlan = await this.getExecutionCommand(transcript);
+      }
+      
       console.log(`🔍 Execution plan:`, executionPlan);
 
       if (!executionPlan.success) {
@@ -187,8 +208,6 @@ class TaskOrchestrator {
           return await this.executeAppleScript(executionPlan.command);
         case 'shell':
           return await this.executeShellCommand(executionPlan.command);
-        case 'keyboard_shortcut':
-          return await this.executeKeyboardShortcut(executionPlan.command);
         case 'playwright':
           return await this.webAutomation.executeWebTask(executionPlan.command, this.onStepComplete);
         case 'error':
@@ -207,115 +226,92 @@ class TaskOrchestrator {
     }
   }
 
-  async getExecutionCommand(transcript) {
+  isUIInteractionCommand(transcript) {
+    const uiKeywords = [
+      'click', 'press', 'tap', 'select', 'choose', 'button', 'ok', 'okay', 'cancel', 
+      'tab', 'enter', 'return', 'escape', 'space', 'arrow', 'up', 'down', 'left', 'right',
+      'dialog', 'window', 'menu', 'close', 'minimize', 'maximize', 'scroll', 'type',
+      'text', 'field', 'input', 'checkbox', 'radio', 'dropdown', 'slider',
+      'search', 'find', 'look for', 'type in', 'enter text', 'write'
+    ];
+    
+    const lowerTranscript = transcript.toLowerCase();
+    
+    // Special cases for search commands when we're likely on a web page
+    if (lowerTranscript.includes('search for') || lowerTranscript.includes('search')) {
+      return true;
+    }
+    
+    return uiKeywords.some(keyword => lowerTranscript.includes(keyword));
+  }
+
+  async getExecutionCommandWithVision(transcript) {
     try {
-      const prompt = `You are an expert in macOS automation. Your primary goal is to generate precise, executable commands based on user requests.
-
-      Current Task Context: ${this.activeTaskContext ? `An active '${this.activeTaskContext}' task is in progress. Subsequent commands should relate to this task.` : 'No active task.'}
-
-      You must respond with a JSON object containing:
-      1. type: One of 'applescript', 'shell', 'keyboard_shortcut', or 'playwright'.
-      2. command: For 'applescript', 'shell', or 'keyboard_shortcut', this is the command string. For 'playwright', this is an array of action objects.
-      3. explanation: Brief explanation of what the command does
-
-      Important rules:
-      - For any task involving a web browser (searching, navigating, interacting with a site), you MUST use the 'playwright' type. The 'command' for this type MUST be an array of objects.
-      - Each object in the 'command' array MUST have an 'action' and a 'selector' (unless the action is 'navigate' or 'wait').
-      - Supported actions are: 'navigate' (requires 'url'), 'click', 'type' (requires 'text' and 'selector'), 'press' (requires 'key' and 'selector'), and 'wait' (requires 'duration').
-      - Example of a valid Playwright command: '[{"action": "navigate", "url": "https://google.com"}, {"action": "type", "selector": "input[name=q]", "text": "fastest language model"}, {"action": "press", "selector": "input[name=q]", "key": "Enter"}]'
-      - CRITICAL RULE: You MUST NOT infer or guess the user's intent. If a command is not a clear, explicit instruction, you MUST respond with a valid JSON object containing an 'error' field. Example: {"type": "error", "command": "", "explanation": "Command is ambiguous or not an executable task."}
-      - For non-web tasks, use 'applescript' or 'shell' types. For application control, always use 'activate' to ensure the app is brought to the foreground (e.g., 'tell application "Notes" to activate').
-      - To minimize a window, DO NOT use 'keystroke "m"'. Instead, tell System Events to click the minimize button of the target window. For the current app, use 'front process'.
-      - For web automation, you MUST first activate the browser window before executing any other steps.
+      console.log(`📸 Taking screenshot for vision-guided execution...`);
       
-      Voice: "increase brightness"
-      Response: {
-        "type": "shell",
-        "command": "CURRENT=$(brightness -l | awk '{print $NF}'); NEW=$(echo \"$CURRENT + 0.1\" | bc); brightness $NEW",
-        "explanation": "Increases screen brightness by 10% using the 'brightness' command-line tool."
+      // Take screenshot first
+      const screenshotPath = await this.takeScreenshot('ui-interaction');
+      
+      // Analyze the screenshot to understand current UI state
+      const visionAnalysis = await this.analyzeScreenshotWithVision(
+        screenshotPath,
+        `The user wants to: "${transcript}". What is currently visible on the screen? What UI elements are present? What's the best way to accomplish this task based on what you can see?`,
+        `User command: "${transcript}"`
+      );
+      
+      if (!visionAnalysis.success) {
+        console.log(`❌ Vision analysis failed, falling back to standard approach`);
+        return await this.getExecutionCommand(transcript);
       }
+      
+      // Use vision context to generate better command
+      console.log(`🤖 Using vision analysis to generate precise command...`);
+      return await this.getExecutionCommand(transcript, visionAnalysis.analysis);
+      
+    } catch (error) {
+      console.error('❌ Vision-guided command generation failed:', error);
+      console.log(`🔄 Falling back to standard approach...`);
+      return await this.getExecutionCommand(transcript);
+    }
+  }
 
-      Voice: "decrease brightness"
-      Response: {
-        "type": "shell",
-        "command": "CURRENT=$(brightness -l | awk '{print $NF}'); NEW=$(echo \"$CURRENT - 0.1\" | bc); brightness $NEW",
-        "explanation": "Decreases screen brightness by 10% using the 'brightness' command-line tool."
-      }
+  async getExecutionCommand(transcript, visionContext = null) {
+    try {
+      const visionPrompt = visionContext ? `\nVISUAL CONTEXT: ${visionContext}\nUse this visual info to be more precise.` : '';
 
-      Voice: "can you open safari and go to github"
-      Response: {
-        "type": "applescript",
-        "command": "tell application \\"Safari\\" to activate\\ntell application \\"System Events\\"\\nkeystroke \\"l\\" using command down\\ndelay 0.1\\nkeystroke \\"github.com\\"\\nkey code 36\\nend tell",
-        "explanation": "Opens Safari, focuses address bar with Cmd+L, types github.com and presses return"
-      }
+      const prompt = `Generate macOS automation commands. Respond with JSON: {"type": "applescript|shell|playwright", "command": "...", "explanation": "..."}
 
-      Voice: "take a screenshot"
-      Response: {
-        "type": "shell",
-        "command": "screencapture ~/Desktop/screenshot-$(date +%Y%m%d-%H%M%S).png",
-        "explanation": "Captures screen to Desktop with timestamp in filename"
-      }
+RULES:
+- applescript: UI automation, keyboard shortcuts, app control
+- shell: System commands (brightness, volume, media controls)  
+- playwright: Web browser automation (array of action objects)
 
-      Voice: "can you open slack"
-      Response: {
-        "type": "applescript",
-        "command": "tell application \\"Slack\\" to activate",
-        "explanation": "Opens and activates Slack application"
-      }
+WORKING COMMANDS:
+- Notes: tell application "Notes" to activate → delay 1 → tell application "System Events" to keystroke "n" using command down
+- Brightness: brightness 0.5 (shell command, 0.1-1.0 range)
+- Volume: cliclick kp:volume-up/down/mute (shell)
+- Media: cliclick kp:play-pause/play-next/play-previous (shell)
+- Minimize: cliclick c:37,14 (click yellow minimize button)
+- Click buttons/windows: cliclick c:x,y (use vision to find exact coordinates)
+- Tab/Enter/Escape: cliclick kp:tab/return/esc (shell)
+- Screenshot: screencapture ~/Desktop/screenshot.png (shell command)
+- Mouse clicks: ALWAYS use cliclick c:x,y for any UI clicking
+- Key combinations: Use AppleScript for complex shortcuts like cmd+shift+3
 
-      Voice: "increase volume"
-      Response: {
-        "type": "applescript",
-        "command": "set volume output volume ((output volume of (get volume settings)) + 10)",
-        "explanation": "Increases system volume by 10%"
-      }
+PLAYWRIGHT EXAMPLE:
+[{"action": "navigate", "url": "https://youtube.com"}, {"action": "click", "selector": "input[name=search_query]"}, {"action": "type", "selector": "input[name=search_query]", "text": "coldplay"}, {"action": "press", "selector": "input[name=search_query]", "key": "Enter"}]
 
-      Voice: "minimize this window"
-      Response: {
-        "type": "applescript",
-        "command": "tell application \"System Events\" to tell front process to click (first button of window 1 whose subrole is \"AXMinimizeButton\")",
-        "explanation": "Minimizes the frontmost application window."
-      }
+If unclear/ambiguous: {"type": "error", "command": "", "explanation": "Command unclear"}${visionPrompt}
 
-      Voice: "minimize voice assistant"
-      Response: {
-        "type": "applescript",
-        "command": "tell application \"System Events\" to tell process \"VoiceMac Assistant\" to click (first button of window 1 whose subrole is \"AXMinimizeButton\")",
-        "explanation": "Minimizes the Voice Assistant application window."
-      }
+Task: "${transcript}"`;
 
-      Voice command to execute: "${transcript}"
-
-      Respond with the most appropriate command in JSON format.`;
-
-      // Make API call to Groq
-      console.log('Sending request to Groq API...');
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'llama3-8b-8192',
-          messages: [
-            { 
-              role: 'system', 
-              content: 'You are a macOS automation expert that generates precise execution commands. Always respond with valid JSON containing type, command, and explanation fields.'
-            },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.1,
-          max_tokens: 500,
-          response_format: { type: "json_object" }
-        })
-      });
+      // Make API call to OpenAI GPT-4o with retry mechanism
+      const response = await this.callOpenAIWithRetry(prompt);
 
       const result = await response.json();
-      console.log('Received response from Groq API:', JSON.stringify(result, null, 2));
       
       if (!result.choices?.[0]?.message?.content) {
-        throw new Error('Invalid response from Groq API. Full response: ' + JSON.stringify(result));
+        throw new Error('Invalid response from OpenAI API. Full response: ' + JSON.stringify(result));
       }
 
       let executionPlan;
@@ -336,7 +332,7 @@ class TaskOrchestrator {
         throw new Error('Invalid execution plan format: command is missing for non-error type');
       }
 
-      if (!['applescript', 'shell', 'keyboard_shortcut', 'playwright', 'error'].includes(executionPlan.type)) {
+      if (!['applescript', 'shell', 'playwright', 'error'].includes(executionPlan.type)) {
         throw new Error(`Invalid execution type: ${executionPlan.type}`);
       }
 
@@ -369,17 +365,22 @@ class TaskOrchestrator {
   }
 
   async executeAppleScript(script) {
-    // Each line of an AppleScript can be passed with its own -e flag.
-    // This is a more robust way to handle multi-line scripts.
-    const sanitizedScript = script.replace(/"/g, '\\"');
-    const osascriptCommand = sanitizedScript.split('\n')
-      .map(line => `-e "${line.trim()}"`)
-      .join(' ');
+    // Proper shell escaping for AppleScript execution
+    // Split into lines and properly escape each line for shell execution
+    const lines = script.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    
+    // Build osascript command with proper escaping
+    const osascriptArgs = lines.map(line => {
+      // Use single quotes to wrap each line to avoid quote escaping issues
+      const escapedLine = line.replace(/'/g, "'\"'\"'"); // Escape single quotes in the content
+      return `-e '${escapedLine}'`;
+    }).join(' ');
 
-    console.log(`[AppleScript] Executing: osascript ${osascriptCommand}`);
+    const fullCommand = `osascript ${osascriptArgs}`;
+    console.log(`[AppleScript] Executing: ${fullCommand}`);
 
     return new Promise((resolve, reject) => {
-      exec(`osascript ${osascriptCommand}`, (error, stdout, stderr) => {
+      exec(fullCommand, (error, stdout, stderr) => {
         if (error) {
           console.error('[AppleScript] Execution Error:', {
             message: error.message,
@@ -498,8 +499,8 @@ class TaskOrchestrator {
         }, TASK_TIMEOUT_MS);
       });
 
-      // Create task execution promise
-      const taskPromise = this.executeTask(transcript);
+      // Create task execution promise with screenshot fallback
+      const taskPromise = this.executeTaskWithScreenshotFallback(transcript);
 
       // Race between task execution and timeout
       const result = await Promise.race([taskPromise, timeoutPromise]);
@@ -552,6 +553,64 @@ class TaskOrchestrator {
     return await this.executeTask(transcript);
   }
 
+
+
+  async callOpenAIWithRetry(prompt, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log('Sending request to OpenAI GPT-4o...');
+        
+        const response = await this.openaiClient.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            { 
+              role: 'system', 
+              content: 'You are a macOS automation expert. Always respond with valid JSON containing type, command, and explanation fields. Use applescript for UI, shell for system commands, playwright for web.'
+            },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.1,
+          max_tokens: 1000,
+          response_format: { type: "json_object" }
+        });
+
+        console.log('Received response from OpenAI GPT-4o:', JSON.stringify(response, null, 2));
+        
+        return {
+          ok: true,
+          json: () => Promise.resolve({
+            choices: [
+              {
+                message: {
+                  content: response.choices[0].message.content
+                }
+              }
+            ]
+          })
+        };
+
+      } catch (error) {
+        console.error(`❌ OpenAI request failed (attempt ${attempt}/${maxRetries}):`, error);
+        
+        // Check for rate limit errors
+        if (error.status === 429) {
+          const waitTime = Math.min(Math.pow(2, attempt) * 5000, 30000);
+          console.log(`⏳ Rate limited, waiting ${Math.round(waitTime/1000)}s before retry ${attempt}/${maxRetries}...`);
+          await this.delay(waitTime);
+          continue;
+        }
+        
+        if (attempt === maxRetries) {
+          throw error;
+        }
+        
+        const waitTime = Math.min(Math.pow(2, attempt) * 2000, 10000);
+        console.log(`🔄 Request failed, retrying in ${waitTime/1000}s... (${attempt}/${maxRetries})`);
+        await this.delay(waitTime);
+      }
+    }
+  }
+
   delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
@@ -592,6 +651,176 @@ class TaskOrchestrator {
       currentTask: this.currentTask,
       shouldStop: this.shouldStop
     };
+  }
+
+  // Screenshot and Vision Analysis Methods
+  async takeScreenshot(description = 'task-failure') {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `${description}-${timestamp}.png`;
+    const filepath = path.join(this.screenshotDir, filename);
+    
+    console.log(`📸 Taking screenshot: ${filename}`);
+    
+    return new Promise((resolve, reject) => {
+      // Use screencapture to take a screenshot of the entire screen
+      exec(`screencapture -x "${filepath}"`, (error, stdout, stderr) => {
+        if (error) {
+          console.error('Screenshot failed:', error);
+          reject(error);
+        } else {
+          console.log(`✅ Screenshot saved: ${filepath}`);
+          resolve(filepath);
+        }
+      });
+    });
+  }
+
+  async analyzeScreenshotWithVision(imagePath, question, context = '') {
+    try {
+      console.log(`🔍 Analyzing screenshot with OpenAI Vision: ${path.basename(imagePath)}`);
+      console.log(`❓ Question: ${question}`);
+      
+      // Read image file and convert to base64
+      const imageBuffer = fs.readFileSync(imagePath);
+      const base64Image = imageBuffer.toString('base64');
+      
+      const messages = [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: `Context: ${context}\n\nQuestion: ${question}\n\nPlease analyze this screenshot and provide specific actionable information.`
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:image/png;base64,${base64Image}`,
+                detail: 'high'
+              }
+            }
+          ]
+        }
+      ];
+
+      const response = await this.openaiClient.chat.completions.create({
+        model: 'gpt-4o',
+        messages: messages,
+        max_tokens: 1000
+      });
+
+      const analysis = response.choices[0].message.content;
+      console.log(`🤖 Vision Analysis Response: ${analysis}`);
+      
+      return {
+        success: true,
+        analysis: analysis,
+        imagePath: imagePath
+      };
+      
+    } catch (error) {
+      console.error('❌ Vision analysis failed:', error);
+      return {
+        success: false,
+        error: error.message,
+        imagePath: imagePath
+      };
+    }
+  }
+
+  async executeTaskWithScreenshotFallback(task, retryCount = 0) {
+    const maxRetries = 2;
+    
+    try {
+      console.log(`🚀 Executing task: "${task}" (attempt ${retryCount + 1})`);
+      
+      // First attempt - normal execution
+      const result = await this.executeTask(task);
+      
+      if (result.success) {
+        console.log(`✅ Task completed successfully: "${task}"`);
+        return result;
+      } else {
+        throw new Error(result.error || 'Task execution failed');
+      }
+      
+    } catch (error) {
+      console.log(`❌ Task failed: ${error.message}`);
+      
+      if (retryCount < maxRetries) {
+        console.log(`🔄 Attempting screenshot-assisted recovery...`);
+        
+        // Take screenshot for context
+        const screenshotPath = await this.takeScreenshot(`task-failure-${retryCount + 1}`);
+        
+        // Analyze what went wrong
+        const visionAnalysis = await this.analyzeScreenshotWithVision(
+          screenshotPath,
+          `The task "${task}" failed with error: ${error.message}. What is the current state of the screen? What might have gone wrong? How can we fix this?`,
+          `User requested: "${task}". Previous attempt failed.`
+        );
+        
+        if (visionAnalysis.success) {
+          // Get improved command based on visual analysis
+          const improvedTask = await this.getImprovedTaskFromVision(task, error.message, visionAnalysis.analysis);
+          
+          if (improvedTask && improvedTask !== task) {
+            console.log(`🔧 Retrying with improved approach: "${improvedTask}"`);
+            return await this.executeTaskWithScreenshotFallback(improvedTask, retryCount + 1);
+          }
+        }
+        
+        // If vision analysis didn't help, try a generic retry
+        if (retryCount < maxRetries - 1) {
+          console.log(`🔄 Retrying original task...`);
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+          return await this.executeTaskWithScreenshotFallback(task, retryCount + 1);
+        }
+      }
+      
+      // Final failure
+      console.log(`💥 Task failed after ${retryCount + 1} attempts: "${task}"`);
+      return {
+        success: false,
+        error: `Task failed after ${retryCount + 1} attempts: ${error.message}`,
+        finalError: true
+      };
+    }
+  }
+
+  async getImprovedTaskFromVision(originalTask, errorMessage, visionAnalysis) {
+    try {
+      console.log(`🧠 Getting improved task based on vision analysis...`);
+      
+      const prompt = `Original task: "${originalTask}"
+Error message: "${errorMessage}"
+Visual analysis of current screen: "${visionAnalysis}"
+
+Based on the visual context and error, suggest an improved version of the original task that is more likely to succeed. Consider:
+1. What applications are currently visible?
+2. What state is the system in?
+3. What specific elements can be targeted?
+4. What alternative approaches might work?
+
+Return only the improved task command, nothing else. If no improvement is possible, return "NO_IMPROVEMENT".`;
+
+      const response = await this.openaiClient.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        max_tokens: 200
+      });
+
+      const improvedTask = response.choices[0].message.content.trim();
+      
+      console.log(`💡 Improved task suggestion: "${improvedTask}"`);
+      
+      return improvedTask === "NO_IMPROVEMENT" ? null : improvedTask;
+      
+    } catch (error) {
+      console.error('❌ Failed to get improved task:', error);
+      return null;
+    }
   }
 }
 
